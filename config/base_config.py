@@ -16,14 +16,14 @@ RANK_DISTRIBUTION: Dict[str, int] = {
     "r32":  5,  # server (48GB VRAM)
 }
 NUM_CLIENTS = 50
-CLIENTS_PER_ROUND = 10   # 2× original; 96GB VRAM handles this easily
+CLIENTS_PER_ROUND = 5    # same as original for fair comparison
 
-# Training — tuned for 2× RTX PRO 6000 Blackwell (96GB VRAM each)
+# Training — tuned for RTX PRO 6000 Blackwell (96GB VRAM)
 LR = 2e-4
-BATCH_SIZE = 8            # fits comfortably in 96GB with 7B model
-GRAD_ACCUM_STEPS = 4      # effective batch = 32
-STEPS_PER_ROUND = 200     # more steps per round for stronger signal
-NUM_ROUNDS = 30           # 3× original for better convergence curves
+BATCH_SIZE = 4            # effective batch = 16 with grad_accum
+GRAD_ACCUM_STEPS = 4
+STEPS_PER_ROUND = 100     # same as original; more rounds compensate
+NUM_ROUNDS = 20           # 2× original for better convergence evidence
 
 # Evaluation
 EVAL_SAMPLES = 500
