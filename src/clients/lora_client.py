@@ -104,12 +104,13 @@ def train_client(
     lr: float,
     device: str = "cuda",
     extract_method: str = "full_w",
+    pbar_desc: str = "",
 ) -> Tuple[Dict, float]:
     """
-    Full client training step.
-
-    Returns (extracted_weights, avg_loss).
+    Full client training step. Returns (extracted_weights, avg_loss).
     """
+    from tqdm import tqdm
+
     model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
     model = model.to(device)
     model.train()
@@ -128,6 +129,9 @@ def train_client(
     data_iter = iter(torch.utils.data.DataLoader(
         dataset, batch_size=batch_size, shuffle=True
     ))
+
+    pbar = tqdm(total=steps, desc=pbar_desc, leave=False,
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, loss={postfix}]")
 
     while step < steps:
         try:
@@ -153,9 +157,12 @@ def train_client(
             optimizer.zero_grad()
 
         step += 1
+        pbar.set_postfix_str(f"{total_loss/step:.4f}")
+        pbar.update(1)
+
+    pbar.close()
 
     weights = extract_lora_weights(model, method=extract_method)
-
     del model
     torch.cuda.empty_cache()
 

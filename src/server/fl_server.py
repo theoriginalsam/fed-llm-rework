@@ -13,6 +13,7 @@ import os
 import torch
 import numpy as np
 from typing import Dict, List, Optional, Any
+from tqdm import tqdm
 
 from config.base_config import (
     NUM_CLIENTS, CLIENTS_PER_ROUND, NUM_ROUNDS, STEPS_PER_ROUND,
@@ -121,9 +122,12 @@ def run_federated(
 
     round_results = []
 
-    for round_num in range(1, num_rounds + 1):
+    round_pbar = tqdm(range(1, num_rounds + 1),
+                      desc=f"{method}|s{seed}|α{alpha}",
+                      unit="round")
+
+    for round_num in round_pbar:
         round_start = time.time()
-        logger.log(f"\n=== Round {round_num}/{num_rounds} ===")
 
         selected = random.sample(range(NUM_CLIENTS), CLIENTS_PER_ROUND)
         total_samples = sum(len(client_datasets[cid]) for cid in selected)
@@ -131,11 +135,10 @@ def run_federated(
 
         round_losses = []
 
-        for cid in selected:
+        for client_idx, cid in enumerate(selected):
             rank = client_rank_map[cid]
             weight = len(client_datasets[cid]) / total_samples
 
-            # Project global W_agg to this client's rank
             if global_wagg is None:
                 client_global = None
             else:
@@ -156,10 +159,10 @@ def run_federated(
                 lr=LR,
                 device=device,
                 extract_method=extract_method,
+                pbar_desc=f"  R{round_num} C{client_idx+1}/{CLIENTS_PER_ROUND} r={rank}",
             )
             round_losses.append(loss)
 
-            # Feed client update to aggregator
             if method == "hetero_pad":
                 aggregator.update(weights, weight, {}, {})
             else:
@@ -198,6 +201,12 @@ def run_federated(
         record = {"round": round_num, "avg_loss": float(np.mean(round_losses)),
                   "round_time_s": round_time, **metrics}
         round_results.append(record)
+
+        # Update round-level bar with key metrics
+        bar_metrics = {k: f"{v:.4f}" for k, v in metrics.items()
+                       if isinstance(v, float)}
+        bar_metrics["loss"] = f"{np.mean(round_losses):.4f}"
+        round_pbar.set_postfix(bar_metrics)
         logger.log(f"  Round {round_num} | {metrics} | time={round_time:.1f}s")
 
     logger.save(round_results)
