@@ -1,33 +1,27 @@
 """
-Quick end-to-end pipeline test.
-Runs 2 rounds, 2 clients, 10 steps each — catches bugs in ~5 minutes.
-Does NOT save to results/. Use this before launching full experiments.
+End-to-end pipeline test — 2 rounds, 2 clients, 10 steps each (~5 min).
+Validates the W_agg global state design: correct shapes for all ranks each round.
 
-Usage:
-    python test_pipeline.py
+Usage: python test_pipeline.py
 """
 
 import os, sys, torch
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from peft import LoraConfig, get_peft_model, TaskType
 from src.aggregation.spa import SPAAggregator
 from src.aggregation.flexlora import FlexLoRAAggregator
 from src.aggregation.fedavg_homo import HomoAggregator, HeteroPadAggregator
-from src.clients.lora_client import (
-    make_lora_model, inject_lora_weights, extract_lora_weights, train_client
-)
+from src.clients.lora_client import train_client
 from config.base_config import MODEL_NAME, TARGET_MODULES
 
 DEVICE = "cuda:0"
-TEST_RANKS = [4, 8]
+TEST_RANKS = [4, 8]   # simulate edge + mid-range client
 
 
 def make_toy_dataset(tokenizer, n=20):
-    """Tiny in-memory dataset for smoke testing."""
     texts = [
-        f"Review: The food was {'great' if i % 2 == 0 else 'terrible'}. Rating: {(i%5)+1} stars"
+        f"Review: The food was {'great' if i%2==0 else 'terrible'}. Rating: {(i%5)+1} stars"
         for i in range(n)
     ]
     samples = []
@@ -41,24 +35,31 @@ def make_toy_dataset(tokenizer, n=20):
     return samples
 
 
+def project_wagg(global_wagg, rank, tau=0.0):
+    """Project W_agg to (A, B) for given rank."""
+    return {
+        layer: dict(zip(("B", "A"),
+                        SPAAggregator.project_to_rank(w, rank, tau=tau, device=DEVICE)))
+        for layer, w in global_wagg.items()
+    }
+
+
 def test_aggregator(name, aggregator, base_model, tokenizer, client_ranks):
     print(f"\n--- Testing {name} ---")
     toy_ds = make_toy_dataset(tokenizer)
+    global_wagg = None
+    extract_method = "ab_pair" if name == "hetero_pad" else "full_w"
 
-    global_weights = None
     for round_num in range(1, 3):
         aggregator.reset()
-        total_n = sum(10 for _ in client_ranks)
+        total_n = len(client_ranks) * 10
 
         for rank in client_ranks:
-            # Build minimal global weight dict for inject
-            client_global = None
-            if global_weights is not None:
-                client_global = {
-                    k: {"A": v["A"][:rank], "B": v["B"][:, :rank]}
-                    for k, v in global_weights.items()
-                    if v["A"].shape[0] >= rank
-                } if global_weights else None
+            # Project global W_agg → (A, B) matched to this client's rank
+            if global_wagg is None:
+                client_global = None
+            else:
+                client_global = project_wagg(global_wagg, rank)
 
             weights, loss = train_client(
                 base_model=base_model,
@@ -72,58 +73,64 @@ def test_aggregator(name, aggregator, base_model, tokenizer, client_ranks):
                 grad_accum=2,
                 lr=2e-4,
                 device=DEVICE,
-                extract_method="full_w" if name != "hetero_pad" else "ab_pair",
+                extract_method=extract_method,
             )
-            w = 10 / total_n
 
+            w = 10 / total_n
             if name == "hetero_pad":
                 aggregator.update(weights, w, {}, {})
             else:
                 aggregator.update(weights, w)
 
-            print(f"  Round {round_num} | rank={rank} | loss={loss:.4f} | "
-                  f"keys={list(weights.keys())[:2]}")
+            print(f"  Round {round_num} | rank={rank} | loss={loss:.4f}")
 
-        # Distribute
-        client_rank_map = {i: r for i, r in enumerate(client_ranks)}
-        dist = aggregator.distribute(client_rank_map, DEVICE)
-        global_weights = dist[0]  # representative global
+        # Build new W_agg from aggregator
+        if name == "hetero_pad":
+            global_wagg = {
+                k: (aggregator._b_accum[k] @ aggregator._a_accum[k]).cpu()
+                for k in aggregator._a_accum
+            }
+        else:
+            global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
 
-        print(f"  Round {round_num} aggregation OK | "
-              f"sample key shapes: A={list(global_weights.values())[0]['A'].shape}, "
-              f"B={list(global_weights.values())[0]['B'].shape}")
+        # Verify shapes are correct for ALL ranks after projection
+        for test_rank in client_ranks:
+            proj = project_wagg(global_wagg, test_rank)
+            sample = next(iter(proj.values()))
+            A_shape, B_shape = sample["A"].shape, sample["B"].shape
+            assert A_shape[0] == test_rank, \
+                f"A rank mismatch: expected {test_rank}, got {A_shape[0]}"
+            assert B_shape[1] == test_rank, \
+                f"B rank mismatch: expected {test_rank}, got {B_shape[1]}"
+            print(f"  Round {round_num} | rank={test_rank} projection: "
+                  f"A={A_shape}, B={B_shape} ✓")
 
-    print(f"  {name} PASSED")
+    print(f"  {name} PASSED\n")
 
 
 def main():
-    print("Loading model (this takes ~1 min)...")
+    print("Loading model...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     base_model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        torch_dtype=torch.bfloat16,
-        device_map=DEVICE,
-        trust_remote_code=True,
+        MODEL_NAME, torch_dtype=torch.bfloat16, device_map=DEVICE, trust_remote_code=True,
     )
     base_model.eval()
     for p in base_model.parameters():
         p.requires_grad_(False)
 
-    vram = torch.cuda.memory_allocated(0) / 1e9
-    print(f"Model loaded. VRAM used: {vram:.1f} GB")
+    print(f"Model loaded. VRAM: {torch.cuda.memory_allocated(0)/1e9:.1f} GB")
 
-    # Test all aggregators
-    test_aggregator("homo_r8",    HomoAggregator(rank=8),         base_model, tokenizer, [8, 8])
-    test_aggregator("hetero_pad", HeteroPadAggregator(max_rank=32), base_model, tokenizer, [4, 8])
-    test_aggregator("flexlora",   FlexLoRAAggregator(max_rank=32), base_model, tokenizer, [4, 8])
-    test_aggregator("hetero_spa", SPAAggregator(max_rank=32, tau=0.01), base_model, tokenizer, [4, 8])
+    test_aggregator("homo_r8",    HomoAggregator(rank=8),            base_model, tokenizer, [8, 8])
+    test_aggregator("hetero_pad", HeteroPadAggregator(max_rank=32),  base_model, tokenizer, TEST_RANKS)
+    test_aggregator("flexlora",   FlexLoRAAggregator(max_rank=32),   base_model, tokenizer, TEST_RANKS)
+    test_aggregator("hetero_spa", SPAAggregator(max_rank=32, tau=0.01), base_model, tokenizer, TEST_RANKS)
 
-    print("\n==========================================")
+    print("=" * 50)
     print("ALL TESTS PASSED — ready for full experiments")
-    print("==========================================")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
