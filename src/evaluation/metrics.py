@@ -52,23 +52,27 @@ YELP_LABEL_TOKENS = ["1", "2", "3", "4", "5"]
 
 @torch.no_grad()
 def evaluate_yelp(model, tokenizer, samples: List[Dict], device: str) -> Dict[str, float]:
+    """
+    Correct evaluation: prompt ends with 'Rating:' (no label).
+    Score each label token at the final position — this is the model's
+    prediction FOR the label, not after it.
+    """
+    # Pre-compute label token IDs once
+    label_token_ids = []
+    for tok in YELP_LABEL_TOKENS:
+        ids = tokenizer(" " + tok, add_special_tokens=False)["input_ids"]
+        label_token_ids.append(ids[-1])
+
     preds, golds = [], []
     for sample in samples:
-        prompt = sample["prompt"]
-        label = sample["label"]  # int 0-4
-        enc = tokenizer(prompt, return_tensors="pt", max_length=256,
-                        truncation=True).to(device)
-        out = model(**enc, labels=enc["input_ids"])
+        enc = tokenizer(sample["prompt"], return_tensors="pt",
+                        max_length=256, truncation=True).to(device)
+        out = model(**enc)
+        logits = out.logits[0, -1, :]   # prediction at last position = label position
 
-        # Score each label token
-        logits = out.logits[0, -1, :]  # last token position
-        scores = []
-        for tok in YELP_LABEL_TOKENS:
-            tid = tokenizer(tok, add_special_tokens=False)["input_ids"][-1]
-            scores.append(logits[tid].item())
-        pred = int(np.argmax(scores))
-        preds.append(pred)
-        golds.append(label)
+        scores = [logits[tid].item() for tid in label_token_ids]
+        preds.append(int(np.argmax(scores)))
+        golds.append(sample["label"])
 
     acc = accuracy_score(golds, preds)
     f1 = f1_score(golds, preds, average="macro", zero_division=0)

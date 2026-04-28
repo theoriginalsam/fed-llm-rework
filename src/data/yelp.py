@@ -123,10 +123,15 @@ def load_yelp(
         client_samples = [all_samples[i] for i in partition[cid]]
         client_datasets.append(YelpClientDataset(client_samples, tokenizer, max_length))
 
-    # Eval samples (no tokenization; metrics.py handles it)
+    # Eval samples: prompt WITHOUT label so model predicts the label token
+    EVAL_TEMPLATE = (
+        "Analyze the review and classify the rating as: "
+        "1 stars, 2 stars, 3 stars, 4 stars, or 5 stars.\n\n"
+        "Review: {text}\n\nRating:"
+    )
     eval_samples = []
     for row in test_data:
-        prompt = PROMPT_TEMPLATE.format(text=row["text"][:400], label=LABEL_MAP[row["label"]])
+        prompt = EVAL_TEMPLATE.format(text=row["text"][:400])
         eval_samples.append({"prompt": prompt, "label": row["label"]})
 
     return client_datasets, eval_samples
