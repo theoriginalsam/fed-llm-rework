@@ -33,20 +33,28 @@ def inject_lora_weights(
     """
     Load (A, B) tensors from layer_weights dict into the model's LoRA parameters.
 
-    layer_weights: {module_name: {"A": tensor, "B": tensor}}
-    Matching: looks for lora_A and lora_B parameter names containing module_name.
+    Uses exact key construction to avoid substring false-matches
+    (e.g. 'layers.1' incorrectly matching 'layers.10', 'layers.11', etc).
     """
     state = model.state_dict()
     for module_name, mats in layer_weights.items():
-        for pname, ptensor in state.items():
-            if module_name in pname and "lora_A" in pname:
-                A = mats["A"].to(device=device, dtype=ptensor.dtype)
-                if A.shape == ptensor.shape:
-                    state[pname] = A
-            elif module_name in pname and "lora_B" in pname:
-                B = mats["B"].to(device=device, dtype=ptensor.dtype)
-                if B.shape == ptensor.shape:
-                    state[pname] = B
+        # Try both PEFT key formats
+        for suffix in ["lora_A.default.weight", "lora_A.weight"]:
+            key = f"{module_name}.{suffix}"
+            if key in state:
+                A = mats["A"].to(device=device, dtype=state[key].dtype)
+                if A.shape == state[key].shape:
+                    state[key] = A
+                break
+
+        for suffix in ["lora_B.default.weight", "lora_B.weight"]:
+            key = f"{module_name}.{suffix}"
+            if key in state:
+                B = mats["B"].to(device=device, dtype=state[key].dtype)
+                if B.shape == state[key].shape:
+                    state[key] = B
+                break
+
     model.load_state_dict(state, strict=False)
 
 
