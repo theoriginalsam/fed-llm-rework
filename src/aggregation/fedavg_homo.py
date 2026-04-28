@@ -32,6 +32,10 @@ class HomoAggregator:
         for k, v in client_weights.items():
             self._accumulator[k] += v.cpu().float() * weight
 
+    def get_global(self) -> Dict[str, torch.Tensor]:
+        """Return W_agg dict (weighted average of ΔW matrices)."""
+        return self._accumulator
+
     def distribute(
         self,
         client_ranks: Dict[str, int],
