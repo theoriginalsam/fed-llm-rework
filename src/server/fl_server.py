@@ -192,11 +192,6 @@ def run_federated(
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
 
-        # Restore base model to GPU after all clients are done (it was moved to CPU
-        # inside train_client to free space for the per-client training copy).
-        base_model.to(device)
-        torch.cuda.empty_cache()
-
         # Evaluate at the minimum rank (most conservative / edge device perspective)
         eval_rank = min(client_rank_map.values())
         eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)

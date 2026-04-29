@@ -18,6 +18,9 @@ import copy
 
 
 def _load_eval_model(base_model, global_lora_weights, rank, device):
+    # Deepcopy through CPU: base_model stays on CPU until eval model is deleted
+    # (see evaluate_model). Having both on GPU simultaneously = OOM on 24GB.
+    base_model.to("cpu")
     model = make_lora_model(copy.deepcopy(base_model), rank, TARGET_MODULES)
     model = model.to(device)
     if global_lora_weights:
@@ -201,4 +204,5 @@ def evaluate_model(
 
     del model
     torch.cuda.empty_cache()
+    base_model.to(device)
     return metrics
