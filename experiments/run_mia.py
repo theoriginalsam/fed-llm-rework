@@ -28,7 +28,7 @@ from src.aggregation.spa import SPAAggregator
 from src.server.fl_server import project_wagg_to_client
 
 
-METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa"]
+METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa", "spa_m"]
 SEEDS   = [42, 43, 44]
 ALPHAS  = [0.5, 0.1]
 

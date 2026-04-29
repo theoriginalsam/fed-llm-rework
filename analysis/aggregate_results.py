@@ -17,13 +17,14 @@ import glob
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 
-METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa"]
+METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa", "spa_m"]
 METHOD_LABELS = {
     "homo_r4":    "FedAvg (r=4)",
     "homo_r8":    "FedAvg (r=8)",
     "hetero_pad": "Hetero-Pad",
     "flexlora":   "FlexLoRA",
     "hetero_spa": "SPA (Ours)",
+    "spa_m":      "SPA-M (Ours)",
 }
 ALPHAS = [0.5, 0.1]
 SEEDS = [42, 43, 44, 45, 46]

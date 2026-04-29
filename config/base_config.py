@@ -42,6 +42,7 @@ METHODS = [
     "hetero_pad",
     "flexlora",
     "hetero_spa",
+    "spa_m",
 ]
 
 # GPU — use GPU 0 for training, GPU 1 for evaluation (parallel)

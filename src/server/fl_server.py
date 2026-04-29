@@ -23,6 +23,7 @@ from config.base_config import (
 from src.aggregation.spa import SPAAggregator
 from src.aggregation.flexlora import FlexLoRAAggregator
 from src.aggregation.fedavg_homo import HomoAggregator, HeteroPadAggregator
+from src.aggregation.spa_momentum import SPAMomentumAggregator
 from src.clients.lora_client import train_client
 from src.evaluation.metrics import evaluate_model
 from src.utils.logging_utils import ExperimentLogger
@@ -60,10 +61,14 @@ def project_wagg_to_client(
     """
     from src.aggregation.spa import SPAAggregator
 
+    from src.aggregation.spa_momentum import SPAMomentumAggregator
+
     client_lora = {}
     for layer_key, w_agg in global_wagg.items():
         if method == "hetero_spa":
             B, A = SPAAggregator.project_to_rank(w_agg, rank, tau=tau, device=device)
+        elif method == "spa_m":
+            B, A = SPAMomentumAggregator.soft_project_to_rank(w_agg, rank, gamma=1.0, device=device)
         else:
             # FlexLoRA, Homo, HeteroPad all use tau=0
             B, A = SPAAggregator.project_to_rank(w_agg, rank, tau=0.0, device=device)
@@ -110,6 +115,9 @@ def run_federated(
         aggregator = FlexLoRAAggregator(max_rank=MAX_RANK)
     elif method == "hetero_spa":
         aggregator = SPAAggregator(max_rank=MAX_RANK, tau=spa_tau)
+    elif method == "spa_m":
+        aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=0.9, gamma=1.0,
+                                           use_consensus=True, consensus_rank=4)
     else:
         raise ValueError(f"Unknown method: {method}")
 

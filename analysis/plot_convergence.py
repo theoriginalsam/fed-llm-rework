@@ -14,13 +14,14 @@ import os
 import glob
 import numpy as np
 
-METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa"]
+METHODS = ["homo_r4", "homo_r8", "hetero_pad", "flexlora", "hetero_spa", "spa_m"]
 METHOD_LABELS = {
     "homo_r4":    "FedAvg (r=4)",
     "homo_r8":    "FedAvg (r=8)",
     "hetero_pad": "Hetero-Pad",
     "flexlora":   "FlexLoRA",
     "hetero_spa": "SPA (Ours)",
+    "spa_m":      "SPA-M (Ours)",
 }
 COLORS = {
     "homo_r4":    "#9e9e9e",
@@ -28,6 +29,7 @@ COLORS = {
     "hetero_pad": "#ff7043",
     "flexlora":   "#42a5f5",
     "hetero_spa": "#e53935",
+    "spa_m":      "#6a1b9a",
 }
 LINESTYLES = {
     "homo_r4":    ":",
@@ -35,6 +37,7 @@ LINESTYLES = {
     "hetero_pad": "-.",
     "flexlora":   "--",
     "hetero_spa": "-",
+    "spa_m":      "-",
 }
 LINEWIDTHS = {
     "homo_r4":    1.2,
@@ -42,6 +45,7 @@ LINEWIDTHS = {
     "hetero_pad": 1.5,
     "flexlora":   1.8,
     "hetero_spa": 2.5,
+    "spa_m":      2.5,
 }
 
 PRIMARY_METRIC = {
