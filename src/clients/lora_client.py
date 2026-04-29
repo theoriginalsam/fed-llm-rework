@@ -124,6 +124,10 @@ def train_client(
     base_model.to("cpu")
     model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
     model = model.to(device)
+    # Gradient checkpointing: recomputes activations on backward pass instead of
+    # storing them. Cuts activation memory ~50% at ~30% speed cost. Needed on
+    # 24GB GPUs for 7B models.
+    model.gradient_checkpointing_enable()
     model.train()
 
     if global_weights is not None:

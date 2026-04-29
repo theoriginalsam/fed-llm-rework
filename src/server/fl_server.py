@@ -89,6 +89,7 @@ def run_federated(
     device: str = "cuda",
     num_rounds: int = NUM_ROUNDS,
     spa_tau: float = 0.01,
+    batch_size: int = BATCH_SIZE,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -162,7 +163,7 @@ def run_federated(
                 global_weights=client_global,
                 dataset=client_datasets[cid],
                 steps=STEPS_PER_ROUND,
-                batch_size=BATCH_SIZE,
+                batch_size=batch_size,
                 grad_accum=GRAD_ACCUM_STEPS,
                 lr=LR,
                 device=device,

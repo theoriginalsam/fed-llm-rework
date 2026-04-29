@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, SEEDS, ALPHA_VALUES, METHODS
+from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, SEEDS, ALPHA_VALUES, METHODS, BATCH_SIZE
 from config.dataset_configs import YELP_CONFIG
 from src.data.yelp import load_yelp
 from src.server.fl_server import run_federated
@@ -48,6 +48,8 @@ def main():
     parser.add_argument("--all", action="store_true", help="Run all methods × seeds × alphas")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--spa-tau", type=float, default=0.01)
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Override batch size (default: from base_config)")
     args = parser.parse_args()
 
     results_dir = os.path.join("results", "yelp")
@@ -91,6 +93,7 @@ def main():
             device=args.device,
             num_rounds=NUM_ROUNDS,
             spa_tau=args.spa_tau,
+            batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
         )
 
     print("\nAll Yelp experiments complete.")
