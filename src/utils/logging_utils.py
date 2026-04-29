@@ -15,7 +15,7 @@ class ExperimentLogger:
         self.out_path = os.path.join(results_dir, f"{tag}.json")
         os.makedirs(results_dir, exist_ok=True)
 
-        logs_dir = os.path.join(os.path.dirname(results_dir), "logs")
+        logs_dir = "logs"
         os.makedirs(logs_dir, exist_ok=True)
         self.log_path = os.path.join(logs_dir, f"{tag}.log")
         self._log_file = open(self.log_path, "w", buffering=1)
