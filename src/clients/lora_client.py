@@ -119,6 +119,9 @@ def train_client(
     """
     from tqdm import tqdm
 
+    # Deepcopy through CPU: avoids doubling GPU memory (14GB × 2 = OOM on 24GB cards).
+    # base_model stays on CPU until after training copy is deleted.
+    base_model.to("cpu")
     model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
     model = model.to(device)
     model.train()
@@ -173,5 +176,8 @@ def train_client(
     weights = extract_lora_weights(model, method=extract_method)
     del model
     torch.cuda.empty_cache()
+
+    # Restore base model to GPU for aggregation and evaluation
+    base_model.to(device)
 
     return weights, total_loss / steps
