@@ -181,8 +181,6 @@ def train_client(
     weights = extract_lora_weights(model, method=extract_method)
     del model
     torch.cuda.empty_cache()
-
-    # Restore base model to GPU for aggregation and evaluation
-    base_model.to(device)
+    # base_model stays on CPU; caller (fl_server) moves it back before evaluation.
 
     return weights, total_loss / steps
