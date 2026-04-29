@@ -124,9 +124,10 @@ def train_client(
     base_model.to("cpu")
     model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
     model = model.to(device)
-    # Gradient checkpointing: recomputes activations on backward pass instead of
-    # storing them. Cuts activation memory ~50% at ~30% speed cost. Needed on
-    # 24GB GPUs for 7B models.
+    # Gradient checkpointing cuts activation memory ~50% at ~30% speed cost.
+    # enable_input_require_grads() is required for PEFT + grad checkpointing:
+    # it hooks the embedding output so autograd can flow through frozen base layers.
+    model.enable_input_require_grads()
     model.gradient_checkpointing_enable()
     model.train()
 
