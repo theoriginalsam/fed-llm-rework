@@ -138,7 +138,8 @@ def run_federated(
     for round_num in round_pbar:
         round_start = time.time()
 
-        selected = random.sample(range(NUM_CLIENTS), CLIENTS_PER_ROUND)
+        eligible = [cid for cid in range(NUM_CLIENTS) if len(client_datasets[cid]) > 0]
+        selected = random.sample(eligible, min(CLIENTS_PER_ROUND, len(eligible)))
         total_samples = sum(len(client_datasets[cid]) for cid in selected)
         aggregator.reset()
 
