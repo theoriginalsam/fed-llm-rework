@@ -117,7 +117,7 @@ def run_federated(
     elif method == "hetero_spa":
         aggregator = SPAAggregator(max_rank=MAX_RANK, tau=spa_tau)
     elif method == "spa_m":
-        aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=0.9, gamma=1.0,
+        aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=0.5, gamma=1.0,
                                            use_consensus=True, consensus_rank=4)
     else:
         raise ValueError(f"Unknown method: {method}")
