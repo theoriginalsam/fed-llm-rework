@@ -72,7 +72,7 @@ def load_gsm8k(
         client_datasets.append(GSM8KClientDataset(samples, tokenizer, max_length))
 
     eval_samples = []
-    for row in test_data:
+    for row in test_data[:100]:
         prompt = EVAL_PROMPT_TEMPLATE.format(question=row["question"])
         eval_samples.append({"prompt": prompt, "answer": row["answer"]})
 

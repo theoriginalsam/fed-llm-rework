@@ -64,7 +64,7 @@ def load_alpaca(
     alpha: float,
     seed: int = 42,
     train_size: int = 40000,
-    test_size: int = 2000,
+    test_size: int = 200,
     max_length: int = 512,
 ) -> Tuple[List[AlpacaClientDataset], List[Dict]]:
     """Load Alpaca, partition for FL."""
