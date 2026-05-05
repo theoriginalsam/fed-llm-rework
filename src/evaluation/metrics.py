@@ -83,6 +83,36 @@ def evaluate_yelp(model, tokenizer, samples: List[Dict], device: str) -> Dict[st
 
 
 # ──────────────────────────────────────────────
+#  Batched generation helper
+# ──────────────────────────────────────────────
+
+def _batch_generate(
+    model, tokenizer, prompts: List[str], device: str,
+    max_new_tokens: int, batch_size: int = 4,
+) -> List[str]:
+    """Left-padded batched generation for decoder-only models (~4× faster than one-by-one)."""
+    original_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+    results = []
+    for i in range(0, len(prompts), batch_size):
+        batch = prompts[i:i + batch_size]
+        enc = tokenizer(batch, return_tensors="pt", max_length=512,
+                        truncation=True, padding=True).to(device)
+        with torch.no_grad():
+            gen = model.generate(
+                **enc,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                pad_token_id=tokenizer.eos_token_id,
+            )
+        input_len = enc["input_ids"].shape[1]
+        for j in range(len(batch)):
+            results.append(tokenizer.decode(gen[j][input_len:], skip_special_tokens=True))
+    tokenizer.padding_side = original_padding_side
+    return results
+
+
+# ──────────────────────────────────────────────
 #  Alpaca: ROUGE-L + BLEU + hallucination rate
 # ──────────────────────────────────────────────
 
@@ -90,33 +120,19 @@ def evaluate_alpaca(model, tokenizer, samples: List[Dict], device: str) -> Dict[
     from rouge_score import rouge_scorer
     import sacrebleu
 
+    prompts = [s["prompt"] for s in samples]
+    references = [s["output"] for s in samples]
+    gen_texts = _batch_generate(model, tokenizer, prompts, device, max_new_tokens=128)
+
     scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
     rouge_scores, bleu_scores, hallucinated = [], [], 0
 
-    for sample in samples:
-        prompt = sample["prompt"]
-        reference = sample["output"]
-
-        enc = tokenizer(prompt, return_tensors="pt", max_length=512,
-                        truncation=True).to(device)
-        with torch.no_grad():
-            gen = model.generate(
-                **enc,
-                max_new_tokens=128,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        gen_text = tokenizer.decode(gen[0][enc["input_ids"].shape[1]:], skip_special_tokens=True)
-
+    for gen_text, reference in zip(gen_texts, references):
         if len(gen_text.strip()) < 3:
             hallucinated += 1
             gen_text = ""
-
-        r = scorer.score(reference, gen_text)["rougeL"].fmeasure
-        rouge_scores.append(r)
-
-        bl = sacrebleu.sentence_bleu(gen_text, [reference]).score
-        bleu_scores.append(bl)
+        rouge_scores.append(scorer.score(reference, gen_text)["rougeL"].fmeasure)
+        bleu_scores.append(sacrebleu.sentence_bleu(gen_text, [reference]).score)
 
     n = len(samples)
     return {
@@ -144,23 +160,13 @@ def extract_gsm8k_answer(text: str) -> Optional[str]:
 
 
 def evaluate_gsm8k(model, tokenizer, samples: List[Dict], device: str) -> Dict[str, float]:
+    prompts = [s["prompt"] for s in samples]
+    gen_texts = _batch_generate(model, tokenizer, prompts, device, max_new_tokens=256)
+
     correct = 0
-    for sample in samples:
-        prompt = sample["prompt"]
+    for sample, gen_text in zip(samples, gen_texts):
         gold_answer = extract_gsm8k_answer(sample["answer"])
-
-        enc = tokenizer(prompt, return_tensors="pt", max_length=512,
-                        truncation=True).to(device)
-        with torch.no_grad():
-            gen = model.generate(
-                **enc,
-                max_new_tokens=256,
-                do_sample=False,
-                pad_token_id=tokenizer.eos_token_id,
-            )
-        gen_text = tokenizer.decode(gen[0][enc["input_ids"].shape[1]:], skip_special_tokens=True)
         pred_answer = extract_gsm8k_answer(gen_text)
-
         if gold_answer and pred_answer and gold_answer.strip() == pred_answer.strip():
             correct += 1
 
