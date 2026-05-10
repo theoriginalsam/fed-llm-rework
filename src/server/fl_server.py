@@ -90,6 +90,8 @@ def run_federated(
     num_rounds: int = NUM_ROUNDS,
     spa_tau: float = 0.01,
     batch_size: int = BATCH_SIZE,
+    eval_rank_strategy: str = "median",
+    rank_weighted: bool = True,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -140,14 +142,22 @@ def run_federated(
 
         eligible = [cid for cid in range(NUM_CLIENTS) if len(client_datasets[cid]) > 0]
         selected = random.sample(eligible, min(CLIENTS_PER_ROUND, len(eligible)))
-        total_samples = sum(len(client_datasets[cid]) for cid in selected)
         aggregator.reset()
+
+        # Rank-weighted aggregation: weight ∝ rank × dataset_size
+        if rank_weighted:
+            total_rw = sum(client_rank_map[cid] * len(client_datasets[cid]) for cid in selected)
+        else:
+            total_rw = sum(len(client_datasets[cid]) for cid in selected)
 
         round_losses = []
 
         for client_idx, cid in enumerate(selected):
             rank = client_rank_map[cid]
-            weight = len(client_datasets[cid]) / total_samples
+            if rank_weighted:
+                weight = (rank * len(client_datasets[cid])) / total_rw
+            else:
+                weight = len(client_datasets[cid]) / total_rw
 
             if global_wagg is None:
                 client_global = None
@@ -193,8 +203,14 @@ def run_federated(
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
 
-        # Evaluate at the minimum rank (most conservative / edge device perspective)
-        eval_rank = min(client_rank_map.values())
+        # Eval rank strategy: median = typical deployment device
+        all_ranks = sorted(client_rank_map.values())
+        if eval_rank_strategy == "median":
+            eval_rank = all_ranks[len(all_ranks) // 2]
+        elif eval_rank_strategy == "max":
+            eval_rank = all_ranks[-1]
+        else:  # "min" — original conservative setting
+            eval_rank = all_ranks[0]
         eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)
 
         metrics = evaluate_model(

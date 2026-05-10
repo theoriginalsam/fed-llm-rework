@@ -44,9 +44,10 @@ def main():
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--spa-tau", type=float, default=0.01)
+    parser.add_argument("--results-dir", type=str, default="results_v2")
     args = parser.parse_args()
 
-    results_dir = os.path.join("results", "gsm8k")
+    results_dir = os.path.join(args.results_dir, "gsm8k")
     os.makedirs(results_dir, exist_ok=True)
 
     model, tokenizer = load_base_model(args.device)

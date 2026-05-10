@@ -68,6 +68,7 @@ class SPAMomentumAggregator:
         self._momentum: Dict[str, torch.Tensor] = {}
         self._round: int = 0
         self._cached_global: Optional[Dict[str, torch.Tensor]] = None
+        self._prev_wagg: Optional[Dict[str, torch.Tensor]] = None  # for adaptive β
 
     # ------------------------------------------------------------------
     # Per-round interface (matches existing aggregators)
@@ -119,17 +120,40 @@ class SPAMomentumAggregator:
                     acc = acc + dw * w
             w_agg_t[layer_key] = acc
 
+        # Adaptive β: high similarity between consecutive updates → less momentum needed
+        beta = self._adaptive_beta(w_agg_t)
+
         # Apply momentum: M_t = β * M_{t-1} + (1-β) * W_agg_t
         for layer_key, w in w_agg_t.items():
             if layer_key not in self._momentum:
                 self._momentum[layer_key] = torch.zeros_like(w)
             self._momentum[layer_key] = (
-                self.beta * self._momentum[layer_key] + (1.0 - self.beta) * w
+                beta * self._momentum[layer_key] + (1.0 - beta) * w
             )
 
         # Bias correction: M̂_t = M_t / (1 - β^t)
-        bc = 1.0 - (self.beta ** self._round)
+        bc = 1.0 - (beta ** self._round)
+        bc = max(bc, 1e-8)
+
+        self._prev_wagg = {k: v.clone() for k, v in w_agg_t.items()}
         return {k: v / bc for k, v in self._momentum.items()}
+
+    def _adaptive_beta(self, w_agg_t: Dict[str, torch.Tensor]) -> float:
+        """
+        Scale β by (1 - cosine_similarity) between current and previous W_agg.
+        Consistent updates (high sim) need less momentum; divergent updates need more.
+        """
+        if self._prev_wagg is None:
+            return self.beta  # first round: use full β
+        try:
+            cur = torch.cat([v.flatten() for v in w_agg_t.values()])
+            prev = torch.cat([v.flatten() for v in self._prev_wagg.values()])
+            sim = float(torch.nn.functional.cosine_similarity(
+                cur.unsqueeze(0), prev.unsqueeze(0)
+            ).clamp(0.0, 1.0))
+        except Exception:
+            return self.beta
+        return self.beta * (1.0 - sim)
 
     def _consensus_weights(self) -> List[float]:
         """

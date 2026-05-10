@@ -50,9 +50,11 @@ def main():
     parser.add_argument("--spa-tau", type=float, default=0.01)
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Override batch size (default: from base_config)")
+    parser.add_argument("--results-dir", type=str, default="results_v2",
+                        help="Root results directory (default: results_v2)")
     args = parser.parse_args()
 
-    results_dir = os.path.join("results", "yelp")
+    results_dir = os.path.join(args.results_dir, "yelp")
     os.makedirs(results_dir, exist_ok=True)
 
     model, tokenizer = load_base_model(args.device)
