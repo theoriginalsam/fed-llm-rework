@@ -52,6 +52,8 @@ def main():
                         help="Override batch size (default: from base_config)")
     parser.add_argument("--results-dir", type=str, default="results_v2",
                         help="Root results directory (default: results_v2)")
+    parser.add_argument("--num-rounds", type=int, default=None,
+                        help="Override number of rounds (default: from base_config)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "yelp")
@@ -93,7 +95,7 @@ def main():
             alpha=alpha,
             results_dir=results_dir,
             device=args.device,
-            num_rounds=NUM_ROUNDS,
+            num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
             batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
         )
