@@ -12,6 +12,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from src.aggregation.spa import SPAAggregator
 from src.aggregation.flexlora import FlexLoRAAggregator
 from src.aggregation.fedavg_homo import HomoAggregator, HeteroPadAggregator
+from src.aggregation.spa_momentum import SPAMomentumAggregator
 from src.clients.lora_client import train_client
 from config.base_config import MODEL_NAME, TARGET_MODULES
 
@@ -127,6 +128,9 @@ def main():
     test_aggregator("hetero_pad", HeteroPadAggregator(max_rank=32),  base_model, tokenizer, TEST_RANKS)
     test_aggregator("flexlora",   FlexLoRAAggregator(max_rank=32),   base_model, tokenizer, TEST_RANKS)
     test_aggregator("hetero_spa", SPAAggregator(max_rank=32, tau=0.01), base_model, tokenizer, TEST_RANKS)
+    test_aggregator("spa_m",      SPAMomentumAggregator(max_rank=32, beta=0.9, gamma=1.0,
+                                                        use_consensus=True, consensus_rank=4),
+                    base_model, tokenizer, TEST_RANKS)
 
     print("=" * 50)
     print("ALL TESTS PASSED — ready for full experiments")

@@ -5,30 +5,36 @@ Combines four improvements over SPA/FlexLoRA:
 
   1. Soft spectral weighting (Idea 1):
        σ̃_i = σ_i * (1 - exp(-σ_i / (γ * σ_1)))
-     Replaces SPA's hard tau threshold and FlexLoRA's tau=0 with the nuclear-norm-
-     optimal soft function. Never zeroes useful components; shrinks noise smoothly.
+     Applied BEFORE momentum accumulation so the EMA buffer accumulates
+     denoised signal, not raw noise. At distribution, only rank-r truncation
+     is needed (soft shaping already applied).
 
   2. Server-side momentum (Idea 2):
-       M_t = β * M_{t-1} + (1 - β) * W_agg_t
-     With bias correction: M̂_t = M_t / (1 - β^t).
-     Directly fixes the α=0.1 oscillation pattern (loss collapses, accuracy crashes).
+       M_t = β * M_{t-1} + (1 - β) * W_filtered_t
+     Bias correction uses the cumulative product of all past β values
+     (correct for variable β):  bc_t = 1 - Π_{τ=1}^{t} β_τ.
+     Output is magnitude-normalized to ||W_agg_t|| to prevent momentum
+     from acting as an uncontrolled LR multiplier across seeds.
 
   3. Consensus weighting (Idea 3):
        w_k ∝ n_k * C_k,  where C_k = mean_j ||U_k^T U_j||_F
-     Down-weights clients whose gradient subspace is orthogonal to the consensus
-     direction. Under high non-IID, outlier clients hurt aggregation quality.
+     Down-weights clients whose gradient subspace is orthogonal to the
+     consensus direction.
 
-  Note: Idea 4 (factored momentum) is equivalent to Idea 2 when we already store
-  W_agg as a full matrix (same memory cost, no additional benefit on our hardware).
+  4. Adaptive β (Idea 4):
+       β_t = β_max * (sim_t + 1) / 2,  sim_t ∈ [-1, 1]
+     High similarity (consistent round) → high β (accelerate).
+     Anti-correlated (oscillating round) → β→0 (brake immediately).
+     Cosine similarity is NOT clamped to [0,1]; the negative range is the
+     most important signal under high non-IID (α=0.1).
 
 Interface matches existing aggregators:
   reset()                 — call at start of each round
   update(dw_dict, weight) — call per client (weight = n_k / N)
   get_global()            — returns W_agg after consensus + momentum
-  distribute(ranks, dev)  — projects W_agg → per-client (A, B) using soft spectral
+  distribute(ranks, dev)  — projects W_agg → per-client (A, B)
 """
 
-import math
 import numpy as np
 import torch
 from typing import Dict, List, Optional, Tuple
@@ -40,7 +46,8 @@ class SPAMomentumAggregator:
 
     Args:
         max_rank:      maximum LoRA rank across all clients.
-        beta:          momentum coefficient (0 = no momentum, 0.9 recommended).
+        beta:          maximum momentum coefficient. Adaptive β scales this
+                       by (sim+1)/2 where sim is round-to-round cosine similarity.
         gamma:         soft-spectral scale; σ̃_i = σ_i*(1-exp(-σ_i/(γ*σ_1))).
                        γ=1.0 is the canonical nuclear-norm-optimal choice.
         use_consensus: if True, reweight clients by subspace agreement.
@@ -68,7 +75,10 @@ class SPAMomentumAggregator:
         self._momentum: Dict[str, torch.Tensor] = {}
         self._round: int = 0
         self._cached_global: Optional[Dict[str, torch.Tensor]] = None
-        self._prev_wagg: Optional[Dict[str, torch.Tensor]] = None  # for adaptive β
+        # Stores denoised W_filtered from previous round for adaptive β
+        self._prev_filtered: Optional[Dict[str, torch.Tensor]] = None
+        # Cumulative product of all past β values for correct variable-β bias correction
+        self._beta_product: float = 1.0
 
     # ------------------------------------------------------------------
     # Per-round interface (matches existing aggregators)
@@ -106,54 +116,98 @@ class SPAMomentumAggregator:
         self._round += 1
         weights = self._consensus_weights()
 
-        # Weighted sum → W_agg_t
+        # Step 1: Weighted sum → W_agg_t
         layer_keys = list(self._client_data[0][0].keys())
         w_agg_t: Dict[str, torch.Tensor] = {}
-
         for layer_key in layer_keys:
             acc = None
             for (dw_dict, _), w in zip(self._client_data, weights):
                 dw = dw_dict[layer_key]
-                if acc is None:
-                    acc = dw * w
-                else:
-                    acc = acc + dw * w
+                acc = dw * w if acc is None else acc + dw * w
             w_agg_t[layer_key] = acc
 
-        # Adaptive β: high similarity between consecutive updates → less momentum needed
-        beta = self._adaptive_beta(w_agg_t)
-
-        # Apply momentum: M_t = β * M_{t-1} + (1-β) * W_agg_t
+        # Step 2: Soft spectral filter BEFORE momentum accumulation.
+        # The EMA buffer must accumulate denoised signal. Filtering after EMA
+        # would allow orthogonal-subspace noise (common under α=0.1 with random
+        # 5-client sampling) to compound in the buffer across rounds.
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        w_filtered_t: Dict[str, torch.Tensor] = {}
         for layer_key, w in w_agg_t.items():
+            w_filtered_t[layer_key] = self._soft_spectral_filter(w, device)
+
+        # Step 3: Adaptive β — compare denoised signals, full [-1,1] sim range.
+        beta = self._adaptive_beta(w_filtered_t)
+
+        # Step 4: EMA on the FILTERED signal.
+        for layer_key, w in w_filtered_t.items():
             if layer_key not in self._momentum:
                 self._momentum[layer_key] = torch.zeros_like(w)
             self._momentum[layer_key] = (
                 beta * self._momentum[layer_key] + (1.0 - beta) * w
             )
 
-        # Bias correction: M̂_t = M_t / (1 - β^t)
-        bc = 1.0 - (beta ** self._round)
-        bc = max(bc, 1e-8)
+        # Step 5: Bias correction using cumulative β product.
+        # Standard formula 1-β^t assumes constant β. With variable β_τ per round,
+        # the correct denominator is 1 - Π_{τ=1}^{t} β_τ.
+        self._beta_product *= beta
+        bc = max(1.0 - self._beta_product, 1e-8)
 
-        self._prev_wagg = {k: v.clone() for k, v in w_agg_t.items()}
-        return {k: v / bc for k, v in self._momentum.items()}
+        # Step 6: Magnitude normalization — prevent momentum from acting as an
+        # uncontrolled LR multiplier. Different seeds see different cosine-sim
+        # sequences → different β_product → different bc → different output scales.
+        # Normalizing to ||W_agg_t|| keeps the effective LR seed-invariant.
+        result: Dict[str, torch.Tensor] = {}
+        for k, v in self._momentum.items():
+            bc_v = v / bc
+            w_norm = torch.linalg.norm(w_agg_t[k].float())
+            m_norm = torch.linalg.norm(bc_v.float())
+            if m_norm > 1e-8 and w_norm > 1e-8:
+                bc_v = bc_v * (w_norm / m_norm)
+            result[k] = bc_v
 
-    def _adaptive_beta(self, w_agg_t: Dict[str, torch.Tensor]) -> float:
+        # Store denoised signal (not raw) for next round's cosine similarity.
+        self._prev_filtered = {k: v.clone() for k, v in w_filtered_t.items()}
+        return result
+
+    def _soft_spectral_filter(
+        self, w: torch.Tensor, device: str = "cpu"
+    ) -> torch.Tensor:
+        """Apply nuclear-norm soft shaping; return full-rank filtered matrix on CPU."""
+        W = w.float().to(device)
+        U, S, Vt = torch.linalg.svd(W, full_matrices=False)
+        if len(S) > 0 and S[0].item() > 1e-12:
+            scale = self.gamma * S[0].item()
+            S_soft = S * (1.0 - torch.exp(-S / scale))
+        else:
+            S_soft = S.clone()
+        return (U @ torch.diag(S_soft) @ Vt).cpu()
+
+    def _adaptive_beta(self, w_filtered_t: Dict[str, torch.Tensor]) -> float:
         """
-        Scale β by (1 - cosine_similarity) between current and previous W_agg.
-        Consistent updates (high sim) need less momentum; divergent updates need more.
+        Scale β by the alignment between consecutive denoised aggregations.
+
+        Maps cosine similarity ∈ [-1, 1] → β ∈ [0, beta_max]:
+          sim= 1 (consistent direction)  → β = beta_max  (safe to accelerate)
+          sim= 0 (orthogonal)            → β = beta_max/2
+          sim=-1 (anti-correlated)       → β = 0         (brake: kill oscillation)
+
+        Negative similarity is the key signal under α=0.1 — it indicates the
+        aggregation direction reversed, and must not be clamped to 0.
         """
-        if self._prev_wagg is None:
+        if self._prev_filtered is None:
             return self.beta  # first round: use full β
         try:
-            cur = torch.cat([v.flatten() for v in w_agg_t.values()])
-            prev = torch.cat([v.flatten() for v in self._prev_wagg.values()])
-            sim = float(torch.nn.functional.cosine_similarity(
-                cur.unsqueeze(0), prev.unsqueeze(0)
-            ).clamp(0.0, 1.0))
+            cur  = torch.cat([v.flatten() for v in w_filtered_t.values()])
+            prev = torch.cat([v.flatten() for v in self._prev_filtered.values()])
+            sim = float(
+                torch.nn.functional.cosine_similarity(
+                    cur.unsqueeze(0), prev.unsqueeze(0)
+                ).clamp(-1.0, 1.0)  # keep full range; negative = oscillation
+            )
         except Exception:
             return self.beta
-        return self.beta * (1.0 - sim)
+        # Linear map [-1, 1] → [0, beta_max]
+        return self.beta * (sim + 1.0) / 2.0
 
     def _consensus_weights(self) -> List[float]:
         """
@@ -166,8 +220,6 @@ class SPAMomentumAggregator:
         if not self.use_consensus or len(self._client_data) < 2:
             return raw_weights  # already normalised by caller (n_k/N)
 
-        # Compute top-k left singular vectors per layer per client
-        # Use svd_lowrank for speed (much faster than full SVD for big matrices)
         layer_keys = list(self._client_data[0][0].keys())
         r = self.consensus_rank
         all_U: List[Dict[str, Optional[torch.Tensor]]] = []
@@ -184,7 +236,6 @@ class SPAMomentumAggregator:
             all_U.append(client_U)
 
         n = len(self._client_data)
-        # C_k = mean over layers and other clients of ||U_k^T U_j||_F
         consensus_scores = []
         for k in range(n):
             scores = []
@@ -208,7 +259,6 @@ class SPAMomentumAggregator:
                     scores.append(float(np.mean(layer_agreements)))
             consensus_scores.append(float(np.mean(scores)) if scores else 1.0)
 
-        # Combined: n_k * C_k
         combined = [raw_weights[k] * consensus_scores[k] for k in range(n)]
         total = sum(combined)
         if total <= 0:
@@ -220,36 +270,29 @@ class SPAMomentumAggregator:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def soft_project_to_rank(
+    def project_to_rank(
         w_agg: torch.Tensor,
         rank: int,
-        gamma: float = 1.0,
         device: str = "cuda",
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Rank-r projection with soft spectral weighting.
+        Project a (already soft-filtered) W_agg to rank-r LoRA factors (B, A).
 
-          σ̃_i = σ_i * (1 - exp(-σ_i / (γ * σ_1)))
+        Soft spectral shaping is applied in _aggregate() before momentum
+        accumulation. This method only does rank-r truncated SVD — no second
+        pass of soft shaping (which would double-shrink singular values).
 
-        γ=1.0 is the nuclear-norm proximal operator (Candes & Recht 2009).
-        This strictly dominates both hard threshold (SPA) and no threshold (FlexLoRA)
-        in expected Frobenius reconstruction error under additive Gaussian noise.
+        Returns (B, A) s.t. B @ A is the best rank-r Frobenius approximation.
         """
         W = w_agg.float().to(device)
         U, S, Vt = torch.linalg.svd(W, full_matrices=False)
 
-        if len(S) > 0 and S[0].item() > 1e-12:
-            scale = gamma * S[0].item()
-            S_soft = S * (1.0 - torch.exp(-S / scale))
-        else:
-            S_soft = S.clone()
-
-        k = min(rank, len(S_soft))
-        S_k = S_soft[:k].clamp(min=0.0)
+        k = min(rank, len(S))
+        S_k = S[:k].clamp(min=0.0)
         S_sqrt = torch.diag(torch.sqrt(S_k))
 
-        A = S_sqrt @ Vt[:k, :]          # (k, d_in)
-        B = U[:, :k] @ S_sqrt           # (d_out, k)
+        A = S_sqrt @ Vt[:k, :]    # (k, d_in)
+        B = U[:, :k] @ S_sqrt     # (d_out, k)
 
         if k < rank:
             pad = rank - k
@@ -257,6 +300,17 @@ class SPAMomentumAggregator:
             B = torch.cat([B, torch.zeros(B.shape[0], pad, device=device)], dim=1)
 
         return B.cpu(), A.cpu()
+
+    # Keep old name as alias so any external callers don't break immediately.
+    # Prefer project_to_rank going forward.
+    @staticmethod
+    def soft_project_to_rank(
+        w_agg: torch.Tensor,
+        rank: int,
+        gamma: float = 1.0,  # retained for signature compatibility; ignored
+        device: str = "cuda",
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        return SPAMomentumAggregator.project_to_rank(w_agg, rank, device)
 
     def distribute(
         self,
@@ -268,7 +322,7 @@ class SPAMomentumAggregator:
         for client_id, rank in client_ranks.items():
             client_lora = {}
             for layer_key, w_agg in global_weights.items():
-                B, A = self.soft_project_to_rank(w_agg, rank, self.gamma, device)
+                B, A = self.project_to_rank(w_agg, rank, device)
                 client_lora[layer_key] = {"A": A, "B": B}
             result[client_id] = client_lora
         return result

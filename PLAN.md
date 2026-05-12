@@ -1,5 +1,5 @@
 # SPA Rework — Full-Scale Experiment Plan
-**Status:** In Progress | **GPU:** Blackwell | **Target:** ICLR / NeurIPS / ACL 2027
+**Status:** V2 Running | **Last Updated:** 2026-05-06 | **GPU:** Blackwell (sp2ai) + A6000 (jovyan) | **Target:** ICLR / NeurIPS / ACL 2027
 
 ---
 
@@ -295,22 +295,106 @@ python -c "import torch; print(torch.cuda.get_device_name(0))"
 
 ## 9. Checklist (Track Progress)
 
-- [ ] Phase 1: Environment verified on Blackwell
-- [ ] FlexLoRA implemented and unit-tested
-- [ ] FLoRA implemented
-- [ ] HetLoRA implemented
-- [ ] Data pipeline: Yelp (α=0.1 added)
-- [ ] Data pipeline: Alpaca
-- [ ] Data pipeline: GSM8K
-- [ ] E1 complete (Yelp, α=0.5, 20 rounds, 5 seeds)
-- [ ] E2 complete (Yelp, α=0.1)
-- [ ] E3 complete (Alpaca)
-- [ ] E4 complete (GSM8K)
-- [ ] Ablations complete (A1-A4)
+### Phase 1–3: Setup and Baselines
+- [x] Phase 1: Environment verified on Blackwell (Qwen2.5-7B in bfloat16, ~14GB VRAM)
+- [x] FlexLoRA implemented (`src/aggregation/flexlora.py`) and unit-tested
+- [ ] FLoRA implemented — *skipped; not in reviewer comparison list; hetero_pad covers zero-pad baseline*
+- [ ] HetLoRA implemented — *deferred; FlexLoRA is the critical missing baseline*
+- [x] Data pipeline: Yelp (α=0.1 and 0.5, 50 clients, Dirichlet partition)
+- [x] Data pipeline: Alpaca (200-sample eval, batched generation, ROUGE-L metric)
+- [x] Data pipeline: GSM8K (100-sample eval cap, batched generation, exact-match)
+
+### Phase 4: V1 Main Experiments (results/)
+- [x] E1 complete (Yelp, α=0.5, 20 rounds, 5 seeds × 5 methods = 25 runs)
+- [x] E2 complete (Yelp, α=0.1, 20 rounds, 5 seeds × 5 methods = 25 runs)
+- [x] E3 complete (Alpaca, α=0.5, 20 rounds, 3 seeds × 4 methods = 12 runs) — *spa_m excluded*
+- [x] E4 partial (GSM8K, α=0.5, 20 rounds) — hetero_spa ✓, homo_r4 ✓, homo_r8 ✓, flexlora 1/3 seeds ✓; hetero_pad + spa_m missing
+
+### V1 Key Findings
+- SPA wins GSM8K at +3.3pp over FedAvg-r8 (75.0% vs 71.7%, 1 seed each — to be confirmed)
+- Alpaca: all methods converge to similar ROUGE-L ~0.42 (Qwen already strong on instruction following)
+- SPA-M loses on Alpaca (-3pp) — EMA momentum hurts generative quality
+- Yelp α=0.1: SPA-M shows instability (accuracy crashes, then recovers) due to β=0.9 carrying stale noise → fixed in V2
+- Yelp α=0.5: methods are within 1-2pp of each other; SPA slightly edges others on best-round
+
+### Phase 4: V2 Experiments — Branch `algo/spa-v2` (results_v2/)
+
+Three algorithmic improvements over V1:
+1. **Median eval rank** (r=8 instead of r=4): fixes structural disadvantage from projecting full-rank W_agg to min rank
+2. **Rank-weighted aggregation**: weight = (rank × dataset_size) / Σ(rank_i × size_i); high-rank clients contribute proportionally more
+3. **Adaptive β**: β_adaptive = β_max × (1 − cosine_sim(W_agg_t, W_agg_{t−1})); consistent updates → less momentum; divergent rounds → more momentum
+
+Early result (2 seeds, α=0.1): SPA final accuracy 40.9±11.2 → 50.5±1.5 — 7× variance reduction confirms eval rank fix was the primary source of instability.
+
+**V2 Yelp run status (as of 2026-05-06):**
+- GPU0 (sp2ai cuda:0): seeds 42,43,44 — ~12/30 done
+- GPU1 (sp2ai cuda:1): seeds 45,46 — running
+- Total: ~12/50 done; ~38 runs remaining (~20 hours)
+- [ ] V2 Yelp complete (50 runs: 5 methods × 2 alphas × 5 seeds)
+- [ ] V2 GSM8K (SPA-M — was OOM on jovyan; run on sp2ai after V2 Yelp finishes)
+
+---
+
+### SPA-M Bug Analysis & Fix — Branch `algo/spa-v2` (2026-05-11)
+
+**Symptoms:** SPA-M α=0.1 final acc 45.7 ± 10.1 vs base SPA 50.5 ± 1.5.
+Accuracy in `spa_m_seed45_alpha01.json` oscillates ±20pp round-to-round
+(48%→33%→48%→28%→46%→25%) despite stable perplexity (7.75–7.90).
+
+**Root cause: 4 bugs in `src/aggregation/spa_momentum.py`.**
+
+#### Bug 1 — EMA before SVD (wrong order)
+- **What:** `_aggregate()` applied momentum to raw `w_agg_t`, then SVD only at distribution time via `soft_project_to_rank`.
+- **Why it broke:** Under α=0.1, the 5 sampled clients change dramatically each round. Consecutive `W_agg_t` matrices occupy near-orthogonal subspaces. EMA over raw orthogonal matrices produces a noise soup; SVD at distribution time cannot recover a clean rank-r signal from it.
+- **Fix:** `_soft_spectral_filter()` now runs on `w_agg_t` before the momentum update. The EMA buffer accumulates denoised signal. `project_to_rank()` at distribution does plain rank-r truncated SVD only (no double-shaping).
+
+#### Bug 2a — Cosine similarity clamped to [0, 1]
+- **What:** `.clamp(0.0, 1.0)` in `_adaptive_beta()` silently discarded negative similarity.
+- **Why it broke:** Anti-correlated updates (sim < 0, the oscillation signal) were mapped to `sim=0` → `β = 0.9 × 1.0 = 0.9` (maximum momentum). The method was injecting maximum momentum into an already-oscillating system. This is the proximate cause of the ±10.1 variance.
+- **Fix:** `.clamp(-1.0, 1.0)` — full range preserved.
+
+#### Bug 2b — Adaptive β formula inverted
+- **What:** Formula was `β_max × (1 − sim)`: consistent rounds got β≈0, divergent got β=β_max.
+- **Why it broke:** Momentum's benefit is accelerating a consistent direction. Giving maximum momentum to divergent rounds accumulates stale noise from misaligned past rounds.
+- **Fix:** Formula is now `β_max × (sim + 1) / 2`: maps [-1,1] → [0, β_max]. Anti-correlated → β=0 (brake). Consistent → β=β_max (accelerate).
+
+#### Bug 2c — Bias correction undefined for variable β
+- **What:** `bc = 1 - (β_adaptive^t)` used current round's variable β with the global round counter as exponent.
+- **Why it broke:** Standard bias correction `1 - β^t` assumes constant β. With different β each round, `β_current^t` is meaningless — neither the product of past β values nor a constant power. Produces arbitrary scale factors, seed-dependent.
+- **Fix:** Track cumulative product: `self._beta_product *= beta` → `bc = 1 - self._beta_product`. Mathematically correct for variable β.
+
+#### Bug 3 — `_prev_wagg` stored raw (noisy) aggregation
+- **What:** `self._prev_wagg` stored `w_agg_t` (raw). Cosine similarity in `_adaptive_beta` compared raw noisy aggregations.
+- **Why it broke:** Under α=0.1, raw aggregations have high round-to-round directional variance (random client subsets). Cosine similarity was systematically underestimated → β_adaptive systematically inflated → momentum buffer accumulated more noise.
+- **Fix:** `self._prev_filtered` now stores `w_filtered_t` (denoised). Cosine similarity compares clean signals.
+
+#### Bug 4 — Momentum output acted as uncontrolled LR multiplier
+- **What:** No magnitude normalization on the bias-corrected output. Different seeds → different β_adaptive sequences → different bias correction scales → different initialization magnitudes for clients → different effective learning rates per seed.
+- **Why it broke:** This is the direct mechanical cause of ±10.1 variance across seeds. The model found the right loss basin (perplexity stable) but the seed-dependent initialization scale repeatedly displaced the classifier weights.
+- **Fix:** Output rescaled to `||W_agg_t||_F` before returning. Effective LR is now seed-invariant.
+
+**Files changed:**
+- `src/aggregation/spa_momentum.py` — complete rewrite of `_aggregate()`, `_adaptive_beta()`, new `_soft_spectral_filter()`, `project_to_rank()` replaces `soft_project_to_rank()` at distribution
+- `src/server/fl_server.py:71` — updated callsite to `project_to_rank`
+
+**Tests:** `test_spa_m.py` — 10 unit tests, CPU-only, all pass. Regression test (Test 10) shows old β was 0.9 for anti-correlated input; new β is 0.0.
+
+**Expected outcome:** Variance drops from ±10.1 to ±2–4. Mean accuracy rises from ~45.7. Whether SPA-M beats base SPA (50.5) at α=0.1 is empirical — momentum requires coherent signal across rounds, which is fundamentally challenging with 5 clients/round under extreme non-IID. More likely to show a clear win at α=0.5.
+
+**Next step:** Run 1-seed smoke test before committing V2-fixed grid:
+```bash
+python experiments/run_yelp.py --method spa_m --seed 42 --alpha 0.1 --num_rounds 5 --results-dir results_v2_fixed
+```
+
+### Phase 5: Analysis
+- [ ] Ablations complete (A1-A4) — deferred until V2 Yelp done
+- [ ] Statistical significance tests (paired t-test across seeds for SPA vs FlexLoRA)
 - [ ] SVD overhead analysis
 - [ ] MIA with proper protocol
-- [ ] Paper revision: related work
-- [ ] Paper revision: experiments section
-- [ ] Paper revision: privacy section
+
+### Phase 6: Paper Revision
+- [ ] Paper revision: related work (acknowledge FlexLoRA similarity, differentiate formally)
+- [ ] Paper revision: experiments section (3 datasets, V2 results table)
+- [ ] Paper revision: privacy section (honest MIA framing)
 - [ ] Paper revision: Table I cleaned
-- [ ] Paper revision: title reconsidered
+- [ ] Paper revision: title reconsidered (remove "Privacy-Preserving" if privacy claims stay weak)

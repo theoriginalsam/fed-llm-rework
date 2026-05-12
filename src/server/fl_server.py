@@ -68,7 +68,7 @@ def project_wagg_to_client(
         if method == "hetero_spa":
             B, A = SPAAggregator.project_to_rank(w_agg, rank, tau=tau, device=device)
         elif method == "spa_m":
-            B, A = SPAMomentumAggregator.soft_project_to_rank(w_agg, rank, gamma=1.0, device=device)
+            B, A = SPAMomentumAggregator.project_to_rank(w_agg, rank, device=device)
         else:
             # FlexLoRA, Homo, HeteroPad all use tau=0
             B, A = SPAAggregator.project_to_rank(w_agg, rank, tau=0.0, device=device)
