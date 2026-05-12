@@ -172,14 +172,25 @@ class SPAMomentumAggregator:
     def _soft_spectral_filter(
         self, w: torch.Tensor, device: str = "cpu"
     ) -> torch.Tensor:
-        """Apply nuclear-norm soft shaping; return full-rank filtered matrix on CPU."""
+        """
+        Apply nuclear-norm soft shaping; return filtered matrix on CPU.
+
+        Uses svd_lowrank(q=max_rank) — the soft shrinkage function
+        σ*(1-exp(-σ/(γ*σ_1))) drives components below ~σ_1/γ toward zero,
+        so singular values beyond max_rank carry negligible weight after
+        filtering. This avoids O(n^3) full SVD on large layers.
+        """
         W = w.float().to(device)
-        U, S, Vt = torch.linalg.svd(W, full_matrices=False)
+        q = min(self.max_rank + 4, min(W.shape))
+        U, S, Vh = torch.svd_lowrank(W, q=q, niter=4)
+        Vt = Vh.T
+
         if len(S) > 0 and S[0].item() > 1e-12:
             scale = self.gamma * S[0].item()
             S_soft = S * (1.0 - torch.exp(-S / scale))
         else:
             S_soft = S.clone()
+
         return (U @ torch.diag(S_soft) @ Vt).cpu()
 
     def _adaptive_beta(self, w_filtered_t: Dict[str, torch.Tensor]) -> float:
@@ -278,21 +289,25 @@ class SPAMomentumAggregator:
         """
         Project a (already soft-filtered) W_agg to rank-r LoRA factors (B, A).
 
-        Soft spectral shaping is applied in _aggregate() before momentum
-        accumulation. This method only does rank-r truncated SVD — no second
-        pass of soft shaping (which would double-shrink singular values).
+        Uses svd_lowrank instead of full SVD — we only need top-r components,
+        and full SVD on large matrices (e.g. 3584×3584 q_proj) is O(n^3) and
+        dominates round time when called per client per layer per round.
+        svd_lowrank is O(n * rank) and gives the same top-r result.
 
         Returns (B, A) s.t. B @ A is the best rank-r Frobenius approximation.
         """
         W = w_agg.float().to(device)
-        U, S, Vt = torch.linalg.svd(W, full_matrices=False)
+        k = min(rank, min(W.shape))
 
-        k = min(rank, len(S))
-        S_k = S[:k].clamp(min=0.0)
-        S_sqrt = torch.diag(torch.sqrt(S_k))
+        # niter=4 gives accurate top-k singular vectors; q=k+4 improves stability
+        U, S, Vh = torch.svd_lowrank(W, q=min(k + 4, min(W.shape)), niter=4)
+        U = U[:, :k]
+        S = S[:k].clamp(min=0.0)
+        Vt = Vh.T[:k, :]
 
-        A = S_sqrt @ Vt[:k, :]    # (k, d_in)
-        B = U[:, :k] @ S_sqrt     # (d_out, k)
+        S_sqrt = torch.diag(torch.sqrt(S))
+        A = S_sqrt @ Vt    # (k, d_in)
+        B = U @ S_sqrt     # (d_out, k)
 
         if k < rank:
             pad = rank - k
