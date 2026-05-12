@@ -383,7 +383,23 @@ Accuracy in `spa_m_seed45_alpha01.json` oscillates ±20pp round-to-round
 
 **Next step:** Run 1-seed smoke test before committing V2-fixed grid:
 ```bash
-python experiments/run_yelp.py --method spa_m --seed 42 --alpha 0.1 --num_rounds 5 --results-dir results_v2_fixed
+nohup python experiments/run_yelp.py --method spa_m --seed 42 --alpha 0.1 --num-rounds 5 --results-dir results_v2_fixed > logs/spa_m_smoke.log 2>&1 &
+```
+
+**Re-run grid (all SPA-M, results_v2_fixed/):**
+```bash
+# GPU 0 — α=0.1, seeds 43-46 (seed 42 covered by smoke test)
+nohup bash -c 'for seed in 43 44 45 46; do python experiments/run_yelp.py --method spa_m --alpha 0.1 --seed $seed --device cuda:0 --results-dir results_v2_fixed; done' > logs/spa_m_alpha01.log 2>&1 &
+
+# GPU 1 — α=0.5, all 5 seeds (run in parallel with above)
+nohup bash -c 'for seed in 42 43 44 45 46; do python experiments/run_yelp.py --method spa_m --alpha 0.5 --seed $seed --device cuda:1 --results-dir results_v2_fixed; done' > logs/spa_m_alpha05.log 2>&1 &
+```
+
+**Note:** All runs use `nohup` so they survive terminal disconnects. Check progress with:
+```bash
+tail -f logs/spa_m_alpha01.log
+tail -f logs/spa_m_alpha05.log
+ps aux | grep run_yelp
 ```
 
 ### Phase 5: Analysis
