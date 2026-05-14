@@ -10,23 +10,25 @@ Combines four improvements over SPA/FlexLoRA:
      is needed (soft shaping already applied).
 
   2. Server-side momentum (Idea 2):
-       M_t = β * M_{t-1} + (1 - β) * W_filtered_t
+       M_t = β * M_{t-1} + (1 - β) * W_agg_t
      Bias correction uses the cumulative product of all past β values
      (correct for variable β):  bc_t = 1 - Π_{τ=1}^{t} β_τ.
-     Output is magnitude-normalized to ||W_agg_t|| to prevent momentum
-     from acting as an uncontrolled LR multiplier across seeds.
+     EMA runs on raw W_agg (no SVD filter in aggregation path); SVD/rank
+     truncation occurs only at distribution time via project_to_rank.
 
   3. Consensus weighting (Idea 3):
        w_k ∝ n_k * C_k,  where C_k = mean_j ||U_k^T U_j||_F
      Down-weights clients whose gradient subspace is orthogonal to the
      consensus direction.
 
-  4. Adaptive β (Idea 4):
-       β_t = β_max * (sim_t + 1) / 2,  sim_t ∈ [-1, 1]
-     High similarity (consistent round) → high β (accelerate).
-     Anti-correlated (oscillating round) → β→0 (brake immediately).
-     Cosine similarity is NOT clamped to [0,1]; the negative range is the
-     most important signal under high non-IID (α=0.1).
+  4. Adaptive β (Idea 4) — saturating stabilizer:
+       β_t = β_max * (1 - clamp(sim_t, 0, 1)),  sim_t ∈ [-1, 1]
+     Consistent round (sim→1) → β→0 (let fresh signal dominate).
+     Orthogonal or anti-correlated round (sim≤0) → β=β_max (saturate).
+     Clamping to [0,1] rather than mapping full [-1,1] is intentional:
+     it provides a saturating maximum-smoothing regime for any round that
+     is at least orthogonal to the previous, preventing over-accumulation
+     of the noisy early-round signal under progressive learning.
 
 Interface matches existing aggregators:
   reset()                 — call at start of each round
@@ -47,7 +49,8 @@ class SPAMomentumAggregator:
     Args:
         max_rank:      maximum LoRA rank across all clients.
         beta:          maximum momentum coefficient. Adaptive β scales this
-                       by (sim+1)/2 where sim is round-to-round cosine similarity.
+                       by (1-clamp(sim,0,1)) — saturates at beta_max for
+                       orthogonal/anti-correlated rounds.
         gamma:         soft-spectral scale; σ̃_i = σ_i*(1-exp(-σ_i/(γ*σ_1))).
                        γ=1.0 is the canonical nuclear-norm-optimal choice.
         use_consensus: if True, reweight clients by subspace agreement.
@@ -126,47 +129,29 @@ class SPAMomentumAggregator:
                 acc = dw * w if acc is None else acc + dw * w
             w_agg_t[layer_key] = acc
 
-        # Step 2: Soft spectral filter BEFORE momentum accumulation.
-        # The EMA buffer must accumulate denoised signal. Filtering after EMA
-        # would allow orthogonal-subspace noise (common under α=0.1 with random
-        # 5-client sampling) to compound in the buffer across rounds.
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        w_filtered_t: Dict[str, torch.Tensor] = {}
+        # Step 2: Adaptive β — compare raw aggregated signals, full [-1,1] sim range.
+        # NOTE: SVD filtering is NOT applied here. Simulation showed it attenuates
+        # the growing learning signal under α=0.1, hurting convergence.
+        # SVD/rank truncation happens only at distribution time (project_to_rank).
+        beta = self._adaptive_beta(w_agg_t)
+
+        # Step 3: EMA on the raw aggregated signal.
         for layer_key, w in w_agg_t.items():
-            w_filtered_t[layer_key] = self._soft_spectral_filter(w, device)
-
-        # Step 3: Adaptive β — compare denoised signals, full [-1,1] sim range.
-        beta = self._adaptive_beta(w_filtered_t)
-
-        # Step 4: EMA on the FILTERED signal.
-        for layer_key, w in w_filtered_t.items():
             if layer_key not in self._momentum:
                 self._momentum[layer_key] = torch.zeros_like(w)
             self._momentum[layer_key] = (
                 beta * self._momentum[layer_key] + (1.0 - beta) * w
             )
 
-        # Step 5: Bias correction using cumulative β product.
+        # Step 4: Bias correction using cumulative β product.
         # Standard formula 1-β^t assumes constant β. With variable β_τ per round,
         # the correct denominator is 1 - Π_{τ=1}^{t} β_τ.
         self._beta_product *= beta
         bc = max(1.0 - self._beta_product, 1e-8)
 
-        # Step 6: Magnitude normalization — prevent momentum from acting as an
-        # uncontrolled LR multiplier. Different seeds see different cosine-sim
-        # sequences → different β_product → different bc → different output scales.
-        # Normalizing to ||W_agg_t|| keeps the effective LR seed-invariant.
-        result: Dict[str, torch.Tensor] = {}
-        for k, v in self._momentum.items():
-            bc_v = v / bc
-            w_norm = torch.linalg.norm(w_agg_t[k].float())
-            m_norm = torch.linalg.norm(bc_v.float())
-            if m_norm > 1e-8 and w_norm > 1e-8:
-                bc_v = bc_v * (w_norm / m_norm)
-            result[k] = bc_v
+        result: Dict[str, torch.Tensor] = {k: v / bc for k, v in self._momentum.items()}
 
-        # Store denoised signal (not raw) for next round's cosine similarity.
-        self._prev_filtered = {k: v.clone() for k, v in w_filtered_t.items()}
+        self._prev_filtered = {k: v.clone() for k, v in w_agg_t.items()}
         return result
 
     def _soft_spectral_filter(
@@ -201,14 +186,16 @@ class SPAMomentumAggregator:
         when rounds oscillate (anti-correlated updates), high β smooths them out;
         when rounds are already consistent, low β lets the fresh signal dominate.
 
-        Maps cosine similarity ∈ [-1, 1] → β ∈ [0, beta_max]:
-          sim=-1 (anti-correlated, oscillating) → β = beta_max  (stabilize)
-          sim= 0 (orthogonal)                   → β = beta_max/2
-          sim= 1 (consistent, converging)        → β = 0         (no smoothing needed)
+        Maps cosine similarity → β:
+          sim ≤ 0 (orthogonal or anti-correlated) → β = beta_max  (maximum stabilization)
+          sim = 1 (consistent, converging)          → β = 0        (no smoothing needed)
+          sim ∈ (0, 1)                              → β linear in (beta_max, 0)
 
-        The original V1 code used (1-sim) but clamped sim to [0,1], which silently
-        treated anti-correlated rounds as neutral. Now sim uses the full [-1,1]
-        range so anti-correlated rounds correctly get maximum stabilizing momentum.
+        Saturating stabilizer: clamp(sim, 0, 1) → β = beta_max*(1-sim).
+        The saturation at sim=0 is intentional — any round that is at least
+        orthogonal to the previous gets full smoothing. Simulation showed that
+        mapping the full [-1,1] range linearly (β=beta_max for sim=-1 only) with
+        high beta_max over-smooths the growing signal under progressive training.
         """
         if self._prev_filtered is None:
             return self.beta  # first round: use full β
@@ -218,12 +205,11 @@ class SPAMomentumAggregator:
             sim = float(
                 torch.nn.functional.cosine_similarity(
                     cur.unsqueeze(0), prev.unsqueeze(0)
-                ).clamp(-1.0, 1.0)
+                ).clamp(0.0, 1.0)  # saturating: anti-corr treated same as orthogonal
             )
         except Exception:
             return self.beta
-        # Linear map [-1, 1] → [beta_max, 0]  (stabilizer direction)
-        return self.beta * (1.0 - sim) / 2.0
+        return self.beta * (1.0 - sim)
 
     def _consensus_weights(self) -> List[float]:
         """

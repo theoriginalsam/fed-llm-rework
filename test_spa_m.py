@@ -73,21 +73,21 @@ def test_magnitude_normalization():
 # ---------------------------------------------------------------------------
 
 def test_adaptive_beta_anti_correlated():
-    print("\n[2] Adaptive β: anti-correlated rounds → β → beta_max (stabilizer: smooth oscillation)")
-    agg = make_aggregator(beta=0.9)
+    print("\n[2] Adaptive β: anti-correlated rounds → β = beta_max (saturating stabilizer)")
+    agg = make_aggregator(beta=0.5)
 
     # Round 1: positive update
     dw_pos = {"layer0": torch.ones(16, 8) * 0.1}
     feed_round(agg, dw_pos)
 
-    # Round 2: perfectly anti-correlated → sim=-1 → β = beta_max (maximum stabilization)
+    # Round 2: anti-correlated → sim=-1 → clamped to 0 → β = beta_max * (1-0) = beta_max
     dw_neg = {"layer0": torch.ones(16, 8) * -0.1}
     agg.reset()
     agg.update(dw_neg, 1.0)
     beta_used = agg._adaptive_beta({"layer0": dw_neg["layer0"].float()})
 
-    ok = abs(beta_used - 0.9) < 0.01
-    print(f"  β_adaptive for anti-correlated input = {beta_used:.6f} (want ≈ 0.9)")
+    ok = abs(beta_used - 0.5) < 0.01
+    print(f"  β_adaptive for anti-correlated input = {beta_used:.6f} (want ≈ 0.5 = beta_max)")
     print(PASS if ok else FAIL)
     return ok
 
@@ -98,7 +98,7 @@ def test_adaptive_beta_anti_correlated():
 
 def test_adaptive_beta_consistent():
     print("\n[3] Adaptive β: consistent rounds → β → 0 (already converging, no smoothing needed)")
-    agg = make_aggregator(beta=0.9)
+    agg = make_aggregator(beta=0.5)
 
     dw = {"layer0": torch.ones(16, 8) * 0.1}
     feed_round(agg, dw)  # sets _prev_filtered
@@ -113,11 +113,11 @@ def test_adaptive_beta_consistent():
 
 
 # ---------------------------------------------------------------------------
-# Test 4: Adaptive β — orthogonal input gives beta_max / 2
+# Test 4: Adaptive β — orthogonal input gives beta_max (saturates at [0,1] clamp)
 # ---------------------------------------------------------------------------
 
 def test_adaptive_beta_orthogonal():
-    print("\n[4] Adaptive β: orthogonal rounds → β ≈ beta_max / 2")
+    print("\n[4] Adaptive β: orthogonal rounds → β = beta_max (saturating stabilizer, sim clamped to 0)")
     agg = make_aggregator(beta=0.8)
 
     # e1 direction in first layer element
@@ -125,13 +125,13 @@ def test_adaptive_beta_orthogonal():
     dw_a["layer0"][0, 0] = 1.0
     feed_round(agg, dw_a)
 
-    # orthogonal direction
+    # orthogonal direction → sim=0 → clamped to 0 → β = 0.8*(1-0) = 0.8
     dw_b = {"layer0": torch.zeros(16, 8)}
     dw_b["layer0"][1, 1] = 1.0
     beta_used = agg._adaptive_beta({"layer0": dw_b["layer0"].float()})
 
-    ok = abs(beta_used - 0.4) < 0.05  # 0.8 * (0 + 1) / 2 = 0.4
-    print(f"  β_adaptive for orthogonal update = {beta_used:.6f} (want ≈ 0.4)")
+    ok = abs(beta_used - 0.8) < 0.05  # saturating: orthogonal gets beta_max
+    print(f"  β_adaptive for orthogonal update = {beta_used:.6f} (want ≈ 0.8 = beta_max)")
     print(PASS if ok else FAIL)
     return ok
 
@@ -271,33 +271,28 @@ def test_project_to_rank_shapes():
 # ---------------------------------------------------------------------------
 
 def test_old_bug_would_fail():
-    print("\n[10] Regression: verify old clamp(0,1) formula would amplify oscillation")
-
-    def old_adaptive_beta(prev, cur, beta=0.9):
-        p = torch.cat([v.flatten() for v in prev.values()])
-        c = torch.cat([v.flatten() for v in cur.values()])
-        sim = float(torch.nn.functional.cosine_similarity(
-            c.unsqueeze(0), p.unsqueeze(0)
-        ).clamp(0.0, 1.0))  # old buggy clamp
-        return beta * (1.0 - sim)  # old buggy formula
+    print("\n[10] Regression: V2-broken accelerator formula gives β→0 for anti-correlated (wrong)")
 
     dw_pos = {"layer0": torch.ones(16, 8) * 0.5}
     dw_neg = {"layer0": torch.ones(16, 8) * -0.5}
 
-    # With old formula: anti-correlated → sim clamped to 0 → β = 0.9
-    beta_old = old_adaptive_beta(dw_pos, dw_neg, beta=0.9)
+    # Current V2.7 (saturating stabilizer): anti-correlated → sim clamped to 0 → β = beta_max
+    sim_curr = float(torch.nn.functional.cosine_similarity(
+        torch.cat([v.flatten() for v in dw_neg.values()]).unsqueeze(0),
+        torch.cat([v.flatten() for v in dw_pos.values()]).unsqueeze(0),
+    ).clamp(0.0, 1.0))
+    beta_curr = 0.5 * (1.0 - sim_curr)
 
-    # With new formula: anti-correlated → sim = -1 → β = 0
-    sim_new = float(torch.nn.functional.cosine_similarity(
+    # V2-broken accelerator: anti-correlated → sim = -1 → β = 0 (WRONG: no smoothing)
+    sim_broken = float(torch.nn.functional.cosine_similarity(
         torch.cat([v.flatten() for v in dw_neg.values()]).unsqueeze(0),
         torch.cat([v.flatten() for v in dw_pos.values()]).unsqueeze(0),
     ).clamp(-1.0, 1.0))
-    beta_new = 0.9 * (sim_new + 1.0) / 2.0
+    beta_broken = 0.5 * (sim_broken + 1.0) / 2.0
 
-    print(f"  Old (broken clamp) β for anti-correlated: {beta_old:.4f} (accidentally correct magnitude, wrong reason)")
-    print(f"  V2-broken β for anti-correlated:         {beta_new:.4f} (accelerator direction — was WRONG)")
-    # Both old and corrected give high β for anti-correlated; V2-broken gave near-zero
-    ok = beta_old > 0.8 and beta_new < 0.05
+    print(f"  V2.7 (saturating stab) β for anti-correlated: {beta_curr:.4f} (want = beta_max = 0.5)")
+    print(f"  V2-broken (accelerator) β for anti-correlated: {beta_broken:.4f} (want ≈ 0, was WRONG)")
+    ok = abs(beta_curr - 0.5) < 0.01 and beta_broken < 0.05
     print(PASS if ok else FAIL + " (regression check inconclusive)")
     return ok
 
