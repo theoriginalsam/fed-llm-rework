@@ -73,41 +73,41 @@ def test_magnitude_normalization():
 # ---------------------------------------------------------------------------
 
 def test_adaptive_beta_anti_correlated():
-    print("\n[2] Adaptive β: anti-correlated rounds → β → 0 (no oscillation amplification)")
+    print("\n[2] Adaptive β: anti-correlated rounds → β → beta_max (stabilizer: smooth oscillation)")
     agg = make_aggregator(beta=0.9)
 
     # Round 1: positive update
     dw_pos = {"layer0": torch.ones(16, 8) * 0.1}
     feed_round(agg, dw_pos)
 
-    # Round 2: perfectly anti-correlated (negated) → should get β ≈ 0
+    # Round 2: perfectly anti-correlated → sim=-1 → β = beta_max (maximum stabilization)
     dw_neg = {"layer0": torch.ones(16, 8) * -0.1}
     agg.reset()
     agg.update(dw_neg, 1.0)
     beta_used = agg._adaptive_beta({"layer0": dw_neg["layer0"].float()})
 
-    ok = beta_used < 0.05
-    print(f"  β_adaptive for anti-correlated input = {beta_used:.6f} (want < 0.05)")
+    ok = abs(beta_used - 0.9) < 0.01
+    print(f"  β_adaptive for anti-correlated input = {beta_used:.6f} (want ≈ 0.9)")
     print(PASS if ok else FAIL)
     return ok
 
 
 # ---------------------------------------------------------------------------
-# Test 3: Adaptive β — consistent input drives β → beta_max
+# Test 3: Adaptive β — consistent input drives β → 0
 # ---------------------------------------------------------------------------
 
 def test_adaptive_beta_consistent():
-    print("\n[3] Adaptive β: consistent rounds → β → beta_max")
+    print("\n[3] Adaptive β: consistent rounds → β → 0 (already converging, no smoothing needed)")
     agg = make_aggregator(beta=0.9)
 
     dw = {"layer0": torch.ones(16, 8) * 0.1}
     feed_round(agg, dw)  # sets _prev_filtered
 
-    # Same direction → cosine sim = 1 → β = beta_max
+    # Same direction → cosine sim = 1 → β = 0
     beta_used = agg._adaptive_beta({"layer0": dw["layer0"].float()})
 
-    ok = abs(beta_used - 0.9) < 0.01
-    print(f"  β_adaptive for identical update = {beta_used:.6f} (want ≈ 0.9)")
+    ok = beta_used < 0.01
+    print(f"  β_adaptive for identical update = {beta_used:.6f} (want ≈ 0.0)")
     print(PASS if ok else FAIL)
     return ok
 
@@ -294,8 +294,9 @@ def test_old_bug_would_fail():
     ).clamp(-1.0, 1.0))
     beta_new = 0.9 * (sim_new + 1.0) / 2.0
 
-    print(f"  Old β for anti-correlated input: {beta_old:.4f} (HIGH = amplifies oscillation)")
-    print(f"  New β for anti-correlated input: {beta_new:.4f} (ZERO = brakes oscillation)")
+    print(f"  Old (broken clamp) β for anti-correlated: {beta_old:.4f} (accidentally correct magnitude, wrong reason)")
+    print(f"  V2-broken β for anti-correlated:         {beta_new:.4f} (accelerator direction — was WRONG)")
+    # Both old and corrected give high β for anti-correlated; V2-broken gave near-zero
     ok = beta_old > 0.8 and beta_new < 0.05
     print(PASS if ok else FAIL + " (regression check inconclusive)")
     return ok

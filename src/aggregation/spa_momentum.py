@@ -195,15 +195,20 @@ class SPAMomentumAggregator:
 
     def _adaptive_beta(self, w_filtered_t: Dict[str, torch.Tensor]) -> float:
         """
-        Scale β by the alignment between consecutive denoised aggregations.
+        Scale β by the divergence between consecutive denoised aggregations.
+
+        Momentum acts as a STABILIZER in federated settings with high non-IID:
+        when rounds oscillate (anti-correlated updates), high β smooths them out;
+        when rounds are already consistent, low β lets the fresh signal dominate.
 
         Maps cosine similarity ∈ [-1, 1] → β ∈ [0, beta_max]:
-          sim= 1 (consistent direction)  → β = beta_max  (safe to accelerate)
-          sim= 0 (orthogonal)            → β = beta_max/2
-          sim=-1 (anti-correlated)       → β = 0         (brake: kill oscillation)
+          sim=-1 (anti-correlated, oscillating) → β = beta_max  (stabilize)
+          sim= 0 (orthogonal)                   → β = beta_max/2
+          sim= 1 (consistent, converging)        → β = 0         (no smoothing needed)
 
-        Negative similarity is the key signal under α=0.1 — it indicates the
-        aggregation direction reversed, and must not be clamped to 0.
+        The original V1 code used (1-sim) but clamped sim to [0,1], which silently
+        treated anti-correlated rounds as neutral. Now sim uses the full [-1,1]
+        range so anti-correlated rounds correctly get maximum stabilizing momentum.
         """
         if self._prev_filtered is None:
             return self.beta  # first round: use full β
@@ -213,12 +218,12 @@ class SPAMomentumAggregator:
             sim = float(
                 torch.nn.functional.cosine_similarity(
                     cur.unsqueeze(0), prev.unsqueeze(0)
-                ).clamp(-1.0, 1.0)  # keep full range; negative = oscillation
+                ).clamp(-1.0, 1.0)
             )
         except Exception:
             return self.beta
-        # Linear map [-1, 1] → [0, beta_max]
-        return self.beta * (sim + 1.0) / 2.0
+        # Linear map [-1, 1] → [beta_max, 0]  (stabilizer direction)
+        return self.beta * (1.0 - sim) / 2.0
 
     def _consensus_weights(self) -> List[float]:
         """

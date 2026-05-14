@@ -379,7 +379,20 @@ Accuracy in `spa_m_seed45_alpha01.json` oscillates ±20pp round-to-round
 
 **Tests:** `test_spa_m.py` — 10 unit tests, CPU-only, all pass. Regression test (Test 10) shows old β was 0.9 for anti-correlated input; new β is 0.0.
 
-**Expected outcome:** Variance drops from ±10.1 to ±2–4. Mean accuracy rises from ~45.7. Whether SPA-M beats base SPA (50.5) at α=0.1 is empirical — momentum requires coherent signal across rounds, which is fundamentally challenging with 5 clients/round under extreme non-IID. More likely to show a clear win at α=0.5.
+**V2 fixed results (5 seeds, α=0.1):**
+- Mean-L5: 40.4 ± 3.6 (vs V1: 47.3 ± 6.5, vs SPA V2: 42.0 ± 4.4)
+- Final:   33.0 ± 6.4 (vs V1: 47.6 ± 7.4, vs SPA V2: 50.5 ± 1.5)
+- Variance did reduce (±7.4 → ±6.4) but mean collapsed — regression.
+
+**Root cause of regression: β direction was wrong (accelerator vs stabilizer).**
+The fix changed β to accelerator mode (high β when consistent, β→0 when divergent).
+Under α=0.1 almost every round is anti-correlated → β≈0 → no momentum → worse than SPA.
+Momentum in FL high non-IID must be a STABILIZER: high β when divergent to smooth oscillations.
+
+**V2.1 fix (2026-05-14):** Reverted β to stabilizer direction with correct [-1,1] sim range:
+  `β = beta_max × (1 - sim) / 2`  maps [-1,1] → [beta_max, 0]
+  Also raised beta_max: 0.5 → 0.9 to match effective momentum strength of V1.
+  Keeps all other fixes: cumulative bias correction, magnitude normalization, SVD filter order, lowrank SVD.
 
 **Next step:** Run 1-seed smoke test before committing V2-fixed grid:
 ```bash
