@@ -1,5 +1,5 @@
 # SPA Rework — Full-Scale Experiment Plan
-**Status:** V2 Running | **Last Updated:** 2026-05-06 | **GPU:** Blackwell (sp2ai) + A6000 (jovyan) | **Target:** ICLR / NeurIPS / ACL 2027
+**Status:** SPA-M V2.8 debugging | **Last Updated:** 2026-05-15 | **GPU:** Blackwell (sp2ai cuda:0) + A6000 (sp2ai cuda:1) | **Target:** ICLR / NeurIPS / ACL 2027
 
 ---
 
@@ -326,12 +326,13 @@ Three algorithmic improvements over V1:
 
 Early result (2 seeds, α=0.1): SPA final accuracy 40.9±11.2 → 50.5±1.5 — 7× variance reduction confirms eval rank fix was the primary source of instability.
 
-**V2 Yelp run status (as of 2026-05-06):**
-- GPU0 (sp2ai cuda:0): seeds 42,43,44 — ~12/30 done
-- GPU1 (sp2ai cuda:1): seeds 45,46 — running
-- Total: ~12/50 done; ~38 runs remaining (~20 hours)
-- [ ] V2 Yelp complete (50 runs: 5 methods × 2 alphas × 5 seeds)
-- [ ] V2 GSM8K (SPA-M — was OOM on jovyan; run on sp2ai after V2 Yelp finishes)
+**V2 Yelp run status (as of 2026-05-15):**
+- Other methods (hetero_spa, flexlora, homo_r8, hetero_pad): ✓ complete for both alphas
+- SPA-M: V2.7 α=0.1 done (5 seeds) — Final 41.8±9.9, overshoot detected, V2.8 fix applied
+- SPA-M: V2.7 α=0.5 in progress — results pending
+- Next: re-run SPA-M both alphas with V2.8 (magnitude normalization restored)
+- [ ] V2 Yelp SPA-M V2.8 complete (10 runs: 2 alphas × 5 seeds)
+- [ ] V2 GSM8K (SPA-M — was OOM on jovyan; run on sp2ai after Yelp SPA-M fixed)
 
 ---
 
@@ -394,24 +395,88 @@ Momentum in FL high non-IID must be a STABILIZER: high β when divergent to smoo
   Also raised beta_max: 0.5 → 0.9 to match effective momentum strength of V1.
   Keeps all other fixes: cumulative bias correction, magnitude normalization, SVD filter order, lowrank SVD.
 
-**Next step:** Run 1-seed smoke test before committing V2-fixed grid:
-```bash
-nohup python experiments/run_yelp.py --method spa_m --seed 42 --alpha 0.1 --num-rounds 5 --results-dir results_v2_fixed > logs/spa_m_smoke.log 2>&1 &
+---
+
+### SPA-M Simulation-Driven Ablation (2026-05-14) — Branch `algo/spa-v2`
+
+**Problem:** V2.1 still underperformed base SPA (simulation cosine-sim 0.227 vs V1 0.274).
+Built `test_spa_m_sim.py`: CPU-only simulation of 20 FL rounds with progressive learning signal
+under α=0.1 dynamics (5→20 seeds × 20 rounds). Metric: cosine similarity with true direction.
+No GPU or model required — runs in ~2 seconds.
+
+**Ablation findings (20 seeds):**
+
+| Version | Final Cos-Sim | SeedVar | Notes |
+|---------|--------------|---------|-------|
+| V1 (broken bugs) | 0.276 | 0.024 | reference |
+| V2 (accelerator β) | 0.229 | 0.026 | regression, confirmed bad |
+| V2.1 (stab[-1,1] + SVD + mag-norm) | 0.218 | 0.016 | SVD filter hurts signal |
+| V2.7 (clamp[0,1] + cumul-bc, β=0.9) | 0.355 | 0.018 | **best in simulation** |
+
+**Key discoveries:**
+1. **SVD filter in `_aggregate()` attenuates learning signal** — filters the very signal we want to accumulate. Removing it from the aggregation path (keeping only at `project_to_rank` distribution time) was the right call.
+2. **β_max=0.9 with clamped [0,1] stabilizer beats both V1 and full [-1,1] stabilizer** — clamping to [0,1] saturates at β_max for any non-consistent round (orthogonal or anti-correlated), preventing over-smoothing. Higher β (0.9 vs 0.5) retains more signal history; cumulative bias correction amplifies it correctly.
+3. **Correct cumulative bias correction reduces seed variance 50%** (0.024 → 0.012) — the whole point of fixing bug 2c.
+
+**V2.7 implementation** (`src/aggregation/spa_momentum.py`):
+- `_adaptive_beta`: `clamp(sim, 0, 1)` → `β = beta_max × (1 - sim)` (saturating stabilizer)
+- `_aggregate`: raw W_agg → adaptive β → EMA → cumulative bc → output (no SVD filter, no mag-norm inside)
+- beta_max = 0.9 (default and fl_server.py)
+- All 10 unit tests pass (`test_spa_m.py`)
+
+---
+
+### V2.7 Real Training Results + V2.8 Fix (2026-05-15)
+
+**V2.7 actual result — Yelp α=0.1 (5 seeds):**
+- Mean-L5 Acc: 40.0 ± 4.7
+- Final Acc:   **41.8 ± 9.9** ← still bad, high variance
+- Best Acc:    54.0 ± 1.8 ← competitive with SPA (53.5)
+
+**Diagnosis: momentum overshoot.** Best Acc≈54% but Final Acc≈42% means the model peaks then degrades. Root cause: the simulation metric (cosine-sim) is scale-invariant. In real training, an uncapped EMA buffer accumulates gradient magnitudes across rounds and acts as an unbounded LR multiplier. The cumulative bias correction `1/(1-Π β_τ)` amplifies this further in mid-training, pushing the model past the optimal point.
+
+**V2.8 fix (2026-05-15):** Re-add magnitude normalization to `_aggregate()` output.
+Rescales `bc_v = momentum / bc` back to `||W_agg_t||_F` before returning.
+This keeps the directional smoothing from momentum but caps the effective update magnitude
+equal to the raw aggregation each round — same scale as all other methods.
+
+```python
+# Added back in _aggregate(), after bias correction:
+for k, v in self._momentum.items():
+    bc_v = v / bc
+    w_norm = torch.linalg.norm(w_agg_t[k].float())
+    m_norm = torch.linalg.norm(bc_v.float())
+    if m_norm > 1e-8 and w_norm > 1e-8:
+        bc_v = bc_v * (w_norm / m_norm)
+    result[k] = bc_v
 ```
 
-**Re-run grid (all SPA-M, results_v2_fixed/):**
-```bash
-# GPU 0 — α=0.1, seeds 43-46 (seed 42 covered by smoke test)
-nohup bash -c 'for seed in 43 44 45 46; do python experiments/run_yelp.py --method spa_m --alpha 0.1 --seed $seed --device cuda:0 --results-dir results_v2_fixed; done' > logs/spa_m_alpha01.log 2>&1 &
+**Why simulation missed this:** Simulation compared cosine-similarity only (scale-invariant).
+Magnitude explosion doesn't affect cosine-sim but does cause accuracy overshoot in real training.
 
-# GPU 1 — α=0.5, all 5 seeds (run in parallel with above)
-nohup bash -c 'for seed in 42 43 44 45 46; do python experiments/run_yelp.py --method spa_m --alpha 0.5 --seed $seed --device cuda:1 --results-dir results_v2_fixed; done' > logs/spa_m_alpha05.log 2>&1 &
+**Current status (2026-05-15):**
+- α=0.1 V2.7 result in hand: Final 41.8±9.9, Best 54.0±1.8
+- V2.8 committed and pushed
+- α=0.5 V2.7 run still in progress (lower heterogeneity — overshoot may be less severe)
+- Plan: wait for α=0.5 result, then re-run both alphas with V2.8
+
+**Re-run commands (V2.8, after git pull on server):**
+```bash
+# Delete stale V2.7 results first
+rm results_v2/yelp/spa_m_alpha01_seed*.json
+rm results_v2/yelp/spa_m_alpha05_seed*.json
+
+# Blackwell — α=0.1
+nohup bash -c 'for s in 0 1 2 3 4; do python experiments/run_yelp.py --method spa_m --alpha 0.1 --seed $s --device cuda:0; done' > logs/spa_m_v28_a01.log 2>&1 &
+
+# A6000 — α=0.5
+nohup bash -c 'for s in 0 1 2 3 4; do python experiments/run_yelp.py --method spa_m --alpha 0.5 --seed $s --device cuda:1; done' > logs/spa_m_v28_a05.log 2>&1 &
 ```
 
 **Note:** All runs use `nohup` so they survive terminal disconnects. Check progress with:
 ```bash
-tail -f logs/spa_m_alpha01.log
-tail -f logs/spa_m_alpha05.log
+tail -f logs/spa_m_v28_a01.log
+tail -f logs/spa_m_v28_a05.log
 ps aux | grep run_yelp
 ```
 
