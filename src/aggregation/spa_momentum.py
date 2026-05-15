@@ -149,7 +149,18 @@ class SPAMomentumAggregator:
         self._beta_product *= beta
         bc = max(1.0 - self._beta_product, 1e-8)
 
-        result: Dict[str, torch.Tensor] = {k: v / bc for k, v in self._momentum.items()}
+        # Magnitude normalization: rescale bias-corrected momentum to match ||W_agg_t||.
+        # Without this, the momentum buffer accumulates magnitudes across rounds and acts
+        # as an unbounded LR multiplier — harmless in simulation (cosine-sim metric)
+        # but causes overshoot and accuracy degradation in real training.
+        result: Dict[str, torch.Tensor] = {}
+        for k, v in self._momentum.items():
+            bc_v = v / bc
+            w_norm = torch.linalg.norm(w_agg_t[k].float())
+            m_norm = torch.linalg.norm(bc_v.float())
+            if m_norm > 1e-8 and w_norm > 1e-8:
+                bc_v = bc_v * (w_norm / m_norm)
+            result[k] = bc_v
 
         self._prev_filtered = {k: v.clone() for k, v in w_agg_t.items()}
         return result
