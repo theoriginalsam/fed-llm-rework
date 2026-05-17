@@ -233,15 +233,12 @@ Keep core algorithm. Add:
 
 ### Phase 1: Environment Setup (Day 1-2)
 ```bash
-# On Blackwell machine
-cd /Users/samir/Desktop/FedLLM/rework
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install transformers==4.44.2 peft==0.12.0 accelerate==0.33.0
-pip install datasets evaluate scikit-learn scipy rouge-score sacrebleu nltk
-pip install wandb  # for experiment tracking
+# On server (sp2ai: 2× RTX A6000 49GB, CUDA 12.8)
+cd ~/FedLLM-Re/rework
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 && pip install -r requirements.txt
 
-# Verify GPU
-python -c "import torch; print(torch.cuda.get_device_name(0))"
+# Verify both GPUs
+python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_name(1))"
 ```
 
 ### Phase 2: Baseline Implementation (Day 3-6)
