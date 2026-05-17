@@ -451,30 +451,110 @@ for k, v in self._momentum.items():
 **Why simulation missed this:** Simulation compared cosine-similarity only (scale-invariant).
 Magnitude explosion doesn't affect cosine-sim but does cause accuracy overshoot in real training.
 
-**Current status (2026-05-15):**
-- α=0.1 V2.7 result in hand: Final 41.8±9.9, Best 54.0±1.8
-- V2.8 committed and pushed
-- α=0.5 V2.7 run still in progress (lower heterogeneity — overshoot may be less severe)
-- Plan: wait for α=0.5 result, then re-run both alphas with V2.8
+---
 
-**Re-run commands (V2.8, after git pull on server):**
-```bash
-# Delete stale V2.7 results first
-rm results_v2/yelp/spa_m_alpha01_seed*.json
-rm results_v2/yelp/spa_m_alpha05_seed*.json
+### V2.8 Real Training Results (2026-05-16)
 
-# Blackwell — α=0.1
-nohup bash -c 'for s in 0 1 2 3 4; do python experiments/run_yelp.py --method spa_m --alpha 0.1 --seed $s --device cuda:0; done' > logs/spa_m_v28_a01.log 2>&1 &
+Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 
-# A6000 — α=0.5
-nohup bash -c 'for s in 0 1 2 3 4; do python experiments/run_yelp.py --method spa_m --alpha 0.5 --seed $s --device cuda:1; done' > logs/spa_m_v28_a05.log 2>&1 &
+**V2.8 Yelp α=0.5 (5 seeds, FINAL):**
+- Mean-L5: 50.0 ± 3.9 | Final: **52.1 ± 4.0** | Best: 59.1 ± 2.5
+- SPA-M beats SPA (49.5) and FlexLoRA (51.7) ✓
+- Mean-L5 ≈ Final gap only 2.1pp → oscillation controlled ✓
+
+**V2.8 Yelp α=0.1 (5 seeds, FINAL):**
+- Mean-L5: 41.4 ± 3.8 | Final: **36.0 ± 12.8** | Best: 53.9 ± 3.2
+- Final accuracy collapses by round 20 despite peaking at 54% mid-training
+- Gap Best→Final = 17.9pp → overshoot persists at α=0.1 ✗
+
+**Full comparison table (incomplete seeds for other methods — treat as provisional):**
+
+| Method | α=0.1 Final | α=0.1 n | α=0.5 Final | α=0.5 n |
+|--------|------------|---------|------------|---------|
+| FedAvg r=8 | 53.4±1.9 | 2 | 54.4±2.6 | 3 |
+| Hetero-Pad | 41.4±15.3 | 3 | 45.1±0.0 | 1 |
+| FlexLoRA | 48.7±1.4 | 2 | 51.7±5.2 | 2 |
+| SPA | 50.5±1.5 | 2 | 49.5±4.5 | 3 |
+| **SPA-M** | **36.0±12.8** | **5** | **52.1±4.0** | **5** |
+
+⚠️ Other methods have n=1–3 seeds only — means and variances are unreliable. Full 5-seed runs for all methods in progress.
+
+---
+
+### Root Cause Analysis: SPA-M α=0.1 Failure (2026-05-16)
+
+**Symptom:** Best Acc≈54% (competitive) but Final Acc≈36% (catastrophic). Model peaks mid-training then degrades.
+
+**Mechanism — server momentum feedback loop:**
+```
+Momentum M_t  →  project_to_rank()  →  client initialization (B, A)
+                                              ↓
+                                    clients train 100 steps
+                                    pushing AWAY from M_t toward local data
+                                              ↓
+                                    ΔW ≈ θ_local − M_t  (relative, not absolute)
+                                              ↓
+                                    W_agg = avg(θ_local) − M_t
+                                              ↓
+                        M_{t+1} = β·M_t + (1−β)·W_agg
+                                = β·M_t + (1−β)·(avg(θ_local) − M_t)
 ```
 
-**Note:** All runs use `nohup` so they survive terminal disconnects. Check progress with:
+W_agg is NOT an absolute signal — it's relative to M_t. So momentum chases a moving target that it itself is displacing. Under α=0.1, different client subsets each round make `avg(θ_local)` jump around → oscillation compounds → accuracy collapses in late training.
+
+**Why perplexity is fine but accuracy oscillates:** Perplexity is a smooth average over all tokens (language model layers improve steadily). Accuracy on Yelp depends on the output projection aligning with one of 5 class tokens — a sharper directional signal that the oscillating momentum periodically inverts.
+
+**Why magnitude normalization (V2.8) didn't fix it at α=0.1:** Normalization caps the scale but not the direction. The feedback loop operates on direction, not magnitude.
+
+**This is a known FL problem.** SCAFFOLD and FedDyn solve it by explicitly estimating and correcting client drift. Server-side momentum without drift correction creates exactly this instability under high non-IID.
+
+**Conclusion:** SPA-M in its current form (server momentum on ΔW fed back into client initialization) cannot be fixed at α=0.1 through hyperparameter tuning. The architecture is the issue.
+
+---
+
+### Paper Positioning After SPA-M Analysis (2026-05-17)
+
+**Why FedAvg r=8 outperforms heterogeneous methods:**
+1. Homogeneous ranks → all 5 sampled clients contribute equal-expressivity ΔW → cleaner aggregation
+2. No rank mismatch noise: rank-4 clients produce sparser updates that dilute higher-rank signal in FlexLoRA/SPA
+3. No projection approximation error at distribution time
+
+**FedAvg r=8 is an oracle baseline** — it assumes all 50 clients can afford rank=8 (2× memory for rank-4 devices). The realistic comparison is within heterogeneous methods: SPA-M vs SPA vs FlexLoRA.
+
+**Current rank distribution: {r4:20, r8:20, r16:5, r32:5}**
+- Equal split between r4/r8 (not strongly skewed toward edge devices)
+- A more realistic distribution (e.g. 35/10/3/2) would further disadvantage FedAvg r=8
+- Potential ablation: run 35/10/3/2 with 1-2 seeds after main results complete
+
+**Paper story (current evidence):**
+- α=0.5: SPA-M > SPA ≈ FlexLoRA > Hetero-Pad (within heterogeneous methods) ✓
+- α=0.1: SPA-M unstable due to server momentum feedback loop — base SPA more robust
+- Honest framing: *"SPA-M improves over SPA at moderate non-IID (α=0.5) but is destabilized by the server momentum feedback loop under extreme non-IID (α=0.1). We analyze this failure mode and recommend SPA-M when α≥0.5."*
+
+---
+
+### Current Run Status (2026-05-17)
+
+**Remaining Yelp runs (in progress on sp2ai — 2× RTX A6000):**
+
+GPU 0 (cuda:0) — α=0.1 missing seeds:
 ```bash
-tail -f logs/spa_m_v28_a01.log
-tail -f logs/spa_m_v28_a05.log
-ps aux | grep run_yelp
+nohup bash -c 'python run_yelp.py --method homo_r8 --alpha 0.1 --seed 43 --device cuda:0 && ... hetero_pad seeds 43,44 && flexlora seeds 43,44,46 && hetero_spa seeds 43,44,46' > logs/remaining_a01.log 2>&1 &
+```
+
+GPU 1 (cuda:1) — α=0.5 missing seeds:
+```bash
+nohup bash -c '... homo_r8 seeds 43,44 && hetero_pad seeds 42,43,44,46 && flexlora seeds 42,43,44 && hetero_spa seeds 43,44' > logs/remaining_a05.log 2>&1 &
+```
+
+- [ ] Yelp all methods n=5 seeds both alphas complete
+- [ ] GSM8K (hetero_spa, homo_r8, flexlora, hetero_pad — SPA-M excluded or flagged)
+- [ ] Alpaca (same methods)
+- [ ] Rank distribution ablation (35/10/3/2) — 1 seed each after main results
+
+**Environment note:** sp2ai has torch 2.12.0 (CUDA 13.0) which conflicts with driver 570.x (CUDA 12.8). Fix:
+```bash
+pip uninstall torch torchvision torchaudio -y && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ### Phase 5: Analysis
