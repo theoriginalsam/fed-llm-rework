@@ -1,5 +1,5 @@
 # SPA Rework — Full-Scale Experiment Plan
-**Status:** SPA-M V2.8 debugging | **Last Updated:** 2026-05-15 | **GPU:** Blackwell (sp2ai cuda:0) + A6000 (sp2ai cuda:1) | **Target:** ICLR / NeurIPS / ACL 2027
+**Status:** Post-professor feedback — paper reframe + ablations planned | **Last Updated:** 2026-05-17 | **GPU:** sp2ai (2× RTX A6000 49GB, CUDA 12.8) | **Target:** ICLR / NeurIPS / ACL 2027
 
 ---
 
@@ -569,3 +569,144 @@ pip uninstall torch torchvision torchaudio -y && pip install torch torchvision t
 - [ ] Paper revision: privacy section (honest MIA framing)
 - [ ] Paper revision: Table I cleaned
 - [ ] Paper revision: title reconsidered (remove "Privacy-Preserving" if privacy claims stay weak)
+
+---
+
+## 10. Professor Feedback Integration (2026-05-17)
+
+Received comprehensive feedback from supervisor. Key points below, translated into action items.
+
+### 10.1 Core Scientific Insight — Reframe the Paper
+
+**Professor's insight:** Heterogeneous-rank FL is fundamentally a **subspace-consensus problem**, not just an aggregation efficiency problem.
+
+LoRA is non-identifiable: `BA = (BQ)(Q^{-1}A)` for any invertible Q. Different clients learn different parameterizations of the same (or similar) functions. When the server aggregates ΔW = B·A and projects back to rank-r, it is performing an implicit basis alignment — but this alignment is arbitrary and inconsistent across rounds.
+
+The deeper failure: SVD truncation at distribution time (step 5 of FlexLoRA/SPA) **destroys minority directions**. A rank-4 client that learned a semantically important but low-energy subspace (e.g., a tail class under α=0.1) gets its direction zeroed out — not because it is noise, but because it is low-energy. This is not a hyperparameter issue; it is a structural flaw in the dense-aggregation + SVD-truncation pipeline.
+
+**Paper reframe (new narrative):**
+> "We show that heterogeneous-rank federated fine-tuning is a subspace-consensus problem: clients operating at different ranks learn incompatible gradient subspaces, and naive aggregation + SVD projection systematically discards minority directions. We characterize when this failure occurs (high non-IID, large rank gaps) and propose SPA as a theoretically grounded aggregation operator that minimizes projection distortion."
+
+This reframing gives us a **stronger contribution**: identifying the subspace-consensus failure mode is novel, independent of whether SPA-M beats SPA numerically.
+
+### 10.2 Rank Distribution — Current Setting is Too Easy
+
+**Problem:** Current `{r4:20, r8:20, r16:5, r32:5}` is too balanced. Equal r4/r8 split means the aggregated ΔW signal is dominated by mid-rank clients — not a hard heterogeneity setting.
+
+**Professor suggests:** More realistic distributions:
+- **35/10/3/2** (35 clients at r4, 10 at r8, 3 at r16, 2 at r32) — strongly skewed toward edge devices
+- **40/8/1/1** — extreme edge-heavy, 1 high-rank client
+
+**Why it matters:** Under 35/10/3/2, FedAvg r=8 is a much less credible oracle (requires 40 edge devices to afford r=8 — not realistic). Heterogeneous methods gain larger relative advantage.
+
+**Action:**
+- [ ] Run 35/10/3/2 ablation: 2 seeds × 2 alphas × {SPA, FlexLoRA, FedAvg-r8} on Yelp (6 runs)
+- [ ] Consider 40/8/1/1 if 35/10/3/2 shows interesting patterns (2 seeds, α=0.1 only)
+
+### 10.3 SVD Truncation Destroys Minority Directions
+
+**Professor's analysis:**
+- Under α=0.1, rank-4 clients are the majority (20/50 currently, 35/50 in realistic setting)
+- Their gradient subspace may capture tail-class directions that are orthogonal to the majority signal
+- SVD of the aggregated ΔW orders components by energy (σ_1 ≥ σ_2 ≥ ... ≥ σ_k)
+- When rank-4 clients' contribution is orthogonal to rank-32 clients' signal, it lands in σ_{k+1} — outside the rank-r window — and is silently discarded
+
+**Proposed solution (Idea A — clustered spectral aggregation):**
+1. Cluster clients by gradient subspace similarity (k-means on top-r singular vectors)
+2. Aggregate within clusters (subspace consensus guaranteed within cluster)
+3. Merge cluster aggregations with rank-weighted combination
+4. Optional: keep one "minority cluster" representative to preserve tail directions
+
+**Proposed solution (Idea B — personalized projection ranks):**
+- Instead of projecting all clients to their own rank independently, project to the *cluster-shared* rank
+- Low-rank clients in a cluster with high-rank clients get projection at the cluster consensus rank
+- Reduces distortion from rank mismatch
+
+**Note:** These are medium-complexity additions. Professor framed them as "optional for ICLR, required for NeurIPS if reviewers ask about subspace loss." Start with Idea A as a prototype after main results complete.
+
+### 10.4 Grassmann Manifold Averaging
+
+**Professor's suggestion:** Instead of averaging ΔW matrices in Euclidean space, average the subspaces themselves on the Grassmann manifold Gr(r, d).
+
+- Karcher mean on Gr(r, d) is the proper notion of "consensus subspace"
+- Avoids the basis-arbitrariness of Euclidean ΔW averaging
+- Can be computed via iterative geodesic averaging (Bhattacharya & Bhattacharya 2012)
+- Cost: O(n · r · d) per round — same order as current SVD
+
+**Status:** Theoretical improvement, worth a section in the paper. Implement only if time permits after main results. The subspace-consensus narrative can reference this as a "direction for future work" if not implemented.
+
+### 10.5 Drift Correction (SCAFFOLD / FedDyn)
+
+**Professor's note:** Server-side momentum without drift correction (as we confirmed in §9 root-cause analysis) creates an unstable control loop under high non-IID. SCAFFOLD corrects this by estimating client drift with a control variate.
+
+**Implication for SPA-M:** Adding SCAFFOLD-style drift correction to SPA-M would fix the α=0.1 failure mode. This is the "clean" architectural fix vs. the ad-hoc magnitude normalization.
+
+- SCAFFOLD overhead: one additional upload per client (the control variate gradient)
+- Communication cost doubles — must be reported honestly
+- Not strictly necessary for the paper if we honestly frame SPA-M's limitation
+
+**Action:** Implement SCAFFOLD-SPA-M as an optional experiment if time permits. Otherwise, cite the failure as a known FL problem and reference SCAFFOLD as the appropriate fix.
+
+### 10.6 Evaluation Metrics — Add Best Acc and AUC
+
+**Professor's correction:** Reporting only Final Acc at round 20 is misleading when accuracy oscillates (e.g., α=0.1 SPA-M peaks at 54% then collapses to 36%). Final Acc understates performance.
+
+**Required additional metrics:**
+1. **Best Acc** (peak across all rounds) — already tracked in JSON logs, add to tables
+2. **AUC of convergence curve** (mean accuracy across all rounds) — use `np.trapz` on per-round accuracy
+3. **Stability variance** (std of accuracy across last 5 rounds) — already computed as Mean-L5 std, just name it
+
+**Update reporting in:**
+- [ ] All results tables in paper
+- [ ] Per-round logs (already captured in round_results JSON)
+- [ ] Summary table in PLAN.md
+
+### 10.7 Participation Rate Ablation
+
+**Professor strongly suggests:** Varying clients-per-round (K) is a critical ablation. Current: K=5/50 (10%).
+
+| K | Fraction | Regime |
+|---|---------|--------|
+| 5 | 10% | current, low participation |
+| 10 | 20% | moderate |
+| 20 | 40% | high participation |
+
+**Why it matters:** SPA-M's momentum is sensitive to K. With K=5 under α=0.1, consecutive rounds share 0 clients → consecutive ΔW matrices are near-orthogonal → β saturates at β_max every round → pure smoothing, no acceleration. With K=20, consecutive rounds share ~8 clients → more consistent subspace direction → adaptive β can fire correctly.
+
+**Action:**
+- [ ] Run K={5, 10, 20} ablation: 2 seeds × α=0.1 × {SPA, SPA-M} on Yelp (12 runs)
+- [ ] Expected: SPA-M improves relative to SPA as K increases — this would make a cleaner story
+
+### 10.8 What to Do Next (Professor's Recommendation)
+
+Priority order:
+1. **Complete the 5-seed grid** for all methods on Yelp (both alphas) — already in progress
+2. **Add Best Acc and AUC columns** to all tables in paper and analysis scripts
+3. **Run 35/10/3/2 rank ablation** (2 seeds) — sharpens the heterogeneity argument
+4. **Run K={5,10,20} participation ablation** (2 seeds, SPA vs SPA-M) — critical for understanding SPA-M failure
+5. **Prototype clustered spectral aggregation** — optional, only if 1-4 yield strong results worth writing up at NeurIPS level
+6. **Reframe the paper** around subspace-consensus — the narrative is stronger than the numbers alone
+
+**Professor's summary quote:** *"The interesting result is not whether SPA-M beats SPA by 2%. The interesting result is that SVD projection at distribution time is structurally destroying minority client information, and nobody in the FL-LoRA literature has characterized this. That's your contribution."*
+
+---
+
+### Quick-Start Commands for New Ablations
+
+```bash
+# After Yelp 5-seed grid is complete, run on sp2ai:
+
+# 1. Rank distribution ablation (35/10/3/2)
+# Edit config/base_config.py: RANK_DISTRIBUTION = {"r4":35, "r8":10, "r16":3, "r32":2}
+for seed in 42 43; do for alpha in 0.1 0.5; do for method in hetero_spa flexlora homo_r8 spa_m; do
+  nohup python experiments/run_yelp.py --method $method --seed $seed --alpha $alpha \
+    --device cuda:0 >> logs/rankdist_${method}_s${seed}_a${alpha}.log 2>&1 &
+done; done; done
+
+# 2. Participation rate ablation (K=10, K=20)
+# Edit config/base_config.py: CLIENTS_PER_ROUND = 10 (or 20)
+for K in 10 20; do for seed in 42 43; do for method in hetero_spa spa_m; do
+  nohup python experiments/run_yelp.py --method $method --seed $seed --alpha 0.1 \
+    --device cuda:1 >> logs/K${K}_${method}_s${seed}.log 2>&1 &
+done; done; done
+```
