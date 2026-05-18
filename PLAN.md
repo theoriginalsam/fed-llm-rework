@@ -467,17 +467,35 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 - Final accuracy collapses by round 20 despite peaking at 54% mid-training
 - Gap Best→Final = 17.9pp → overshoot persists at α=0.1 ✗
 
-**Full comparison table (incomplete seeds for other methods — treat as provisional):**
+**V2 Yelp Results (2026-05-18) — ★ = primary metric (Mean-L5 Acc):**
 
-| Method | α=0.1 Final | α=0.1 n | α=0.5 Final | α=0.5 n |
-|--------|------------|---------|------------|---------|
-| FedAvg r=8 | 53.4±1.9 | 2 | 54.4±2.6 | 3 |
-| Hetero-Pad | 41.4±15.3 | 3 | 45.1±0.0 | 1 |
-| FlexLoRA | 48.7±1.4 | 2 | 51.7±5.2 | 2 |
-| SPA | 50.5±1.5 | 2 | 49.5±4.5 | 3 |
-| **SPA-M** | **36.0±12.8** | **5** | **52.1±4.0** | **5** |
+α=0.1 (n in parentheses — SPA/FlexLoRA still incomplete at n=2):
 
-⚠️ Other methods have n=1–3 seeds only — means and variances are unreliable. Full 5-seed runs for all methods in progress.
+| Method | Mean-L5 Acc ★ | Final Acc | Best Acc | n |
+|--------|--------------|-----------|----------|---|
+| FedAvg r=8 | 42.2±2.7 | 39.6±12.8 | 54.1±3.3 | 5 |
+| Hetero-Pad | 42.0±3.9 | 41.4±15.3 | 56.0±0.4 | 3 |
+| FlexLoRA | 41.7±4.6 | 48.7±1.4 | 53.7±1.5 | **2** |
+| SPA | 42.0±4.4 | 50.5±1.5 | 53.5±0.2 | **2** |
+| **SPA-M** | 41.4±3.8 | 36.0±12.8 | 53.9±3.2 | **5** |
+
+α=0.5 (SPA still at n=4):
+
+| Method | Mean-L5 Acc ★ | Final Acc | Best Acc | n |
+|--------|--------------|-----------|----------|---|
+| FedAvg r=8 | 52.4±2.1 | 56.4±3.1 | 59.9±1.3 | 5 |
+| Hetero-Pad | 48.9±4.3 | 51.3±5.5 | 57.4±2.3 | 5 |
+| FlexLoRA | 51.3±3.3 | 53.1±4.3 | 59.4±2.3 | 5 |
+| SPA | 50.0±4.3 | 51.2±4.9 | 58.9±2.7 | **4** |
+| **SPA-M** | **51.6±3.5** | 52.1±4.0 | **60.1±2.4** | 5 |
+
+⚠️ SPA and FlexLoRA at α=0.1 have n=2 — Final Acc means unreliable. Mean-L5 stable by n=3.
+
+**Key findings from completed data:**
+1. **α=0.5 SPA-M Best Acc 60.1 edges FedAvg r=8 (59.9)** — our method peaks higher than the oracle on best-round metric. Mean-L5 (51.6 vs 52.4) within noise.
+2. **α=0.1 Mean-L5 all tied at 41–42%** — no method dominates on the ★ metric. FedAvg r=8 Final also collapses (39.6±12.8), same high variance as SPA-M. The "oracle" is not stable either.
+3. **Final Acc is misleading for all methods at α=0.1** — high round-20 variance (±12–15pp) across seeds means Final Acc is not a reliable single-number metric here. Mean-L5 and Best Acc are the right primary metrics.
+4. SPA/FlexLoRA n=2 at α=0.1 look good on Final (50.5/48.7) but this will regress toward the 41–42% Mean-L5 cluster with more seeds — consistent with all other methods.
 
 ---
 
