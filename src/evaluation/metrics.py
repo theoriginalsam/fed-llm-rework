@@ -174,6 +174,56 @@ def evaluate_gsm8k(model, tokenizer, samples: List[Dict], device: str) -> Dict[s
 
 
 # ──────────────────────────────────────────────
+#  Dolly unseen-client evaluation (FlexLoRA metric)
+# ──────────────────────────────────────────────
+
+def evaluate_unseen_clients(
+    model,
+    tokenizer,
+    unseen_samples: List[List[Dict]],
+    device: str,
+    n_samples_per_client: int = 30,
+) -> Dict[str, float]:
+    """
+    Zero-shot ROUGE-L on held-out clients never seen during training.
+    Mirrors FlexLoRA's evaluation protocol exactly.
+
+    unseen_samples: list of raw Dolly sample lists (one per unseen client)
+    Returns weighted average ROUGE-L across all unseen clients.
+    """
+    from rouge_score import rouge_scorer
+    scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+
+    from src.data.dolly import EVAL_PROMPT_TEMPLATE
+    all_rouge = []
+
+    for client_samples in unseen_samples:
+        subset = client_samples[:n_samples_per_client]
+        if not subset:
+            continue
+        prompts = [
+            EVAL_PROMPT_TEMPLATE.format(
+                instruction=s["instruction"],
+                context=s.get("context", ""),
+            )
+            for s in subset
+        ]
+        references = [s["response"] for s in subset]
+        gen_texts = _batch_generate(model, tokenizer, prompts, device, max_new_tokens=128)
+
+        client_rouge = [
+            scorer.score(ref, gen)["rougeL"].fmeasure
+            for ref, gen in zip(references, gen_texts)
+        ]
+        all_rouge.append(float(np.mean(client_rouge)))
+
+    return {
+        "rouge_l_unseen": float(np.mean(all_rouge)) if all_rouge else 0.0,
+        "rouge_l_unseen_std": float(np.std(all_rouge)) if all_rouge else 0.0,
+    }
+
+
+# ──────────────────────────────────────────────
 #  Unified evaluate_model
 # ──────────────────────────────────────────────
 
