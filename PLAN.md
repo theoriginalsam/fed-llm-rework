@@ -590,7 +590,61 @@ pip uninstall torch torchvision torchaudio -y && pip install torch torchvision t
 
 ---
 
-## 10. Professor Feedback Integration (2026-05-17)
+## 10. FlexLoRA Paper Analysis (2026-05-18)
+
+Read FlexLoRA paper (arXiv 2402.11505v2) to verify rank comparison fairness.
+
+### FlexLoRA's Actual Experimental Setup
+
+**Model:** DataJuicer 1.3B (also LLaMA-3 8B in scalability study)
+**Clients:** 1600+ clients (also tested 10/50/100/200 subsets)
+**Participation:** 10 clients/round
+**Task:** Task-heterogeneous (1600+ distinct NLP tasks from Natural Instructions)
+**Metric:** ROUGE-L zero-shot on *unseen* clients (generalization, not supervised accuracy)
+**Dataset:** Natural Instructions + Dolly-15K
+
+**Rank configurations (Table 1):**
+| Type | Config | % Params |
+|------|--------|---------|
+| Type 1 | r=8 all layers | 0.12% |
+| Type 2 | r=30 all layers | 2.46% |
+| Type 3 | r=30 attention, r=200 FFN | 8.22% |
+| Type 4 | r=200 all layers | 12.22% |
+
+**FlexLoRA's reported gains:** ~2% ROUGE-L over FedAvg homo-rank baselines (modest).
+
+### Our Setup vs FlexLoRA Paper
+
+| Aspect | FlexLoRA paper | Our setup |
+|--------|---------------|-----------|
+| Model | DataJuicer 1.3B | Qwen2.5 7B |
+| Clients | 1600+ | 50 |
+| Max rank | **r=200** | r=32 |
+| Metric | ROUGE-L zero-shot unseen clients | Accuracy supervised test set |
+| Heterogeneity | Task-heterogeneous (1600 NLP tasks) | Data-heterogeneous (Dirichlet α) |
+| Participation | 10/round | 5/round |
+
+### Implications
+
+1. **Our comparison is correct** — we implement their algorithm in our setting, not compare against their paper numbers. Direct comparison would be invalid (different model, metric, task regime entirely).
+
+2. **Their r=32 ≈ our r=32** — our max rank matches their Type 2 (r=30). We are not under-powered relative to the typical FlexLoRA client. Their Type 3/4 (r=200) clients are exceptional heavy-resource nodes.
+
+3. **Adding r=64 would close the gap to their Type 3** — could widen SPA-M's advantage since aggregate ΔW spans a richer subspace. Not required for a fair comparison but a natural ablation.
+
+4. **Their gains (~2% ROUGE-L) were small** — their method is simple and the regime (1600 clients, task-heterogeneous) is favorable for averaging. Our 50-client high-non-IID regime is strictly harder, where subspace-consensus breaks down more severely.
+
+5. **Their setting is easier for FlexLoRA** — 1600 clients provides massive subspace diversity; zero-shot ROUGE-L rewards generalization; task heterogeneity is more benign than data non-IID because each client has a clear local optimum. Our Dirichlet α=0.1 with 50 clients is where their method's structural weaknesses (SVD projection destroys minority directions) become visible.
+
+### Paper Positioning Implication
+
+*"FlexLoRA was validated in a cross-device regime with thousands of task-heterogeneous clients. We study the regime it did not — 50 clients, extreme data non-IID (α=0.1), supervised fine-tuning of a 7B model — and characterize where and why the SVD-aggregation pipeline fails."*
+
+This is a complementary contribution, not a contradiction of their results.
+
+---
+
+## 11. Professor Feedback Integration (2026-05-17)
 
 Received comprehensive feedback from supervisor. Key points below, translated into action items.
 
