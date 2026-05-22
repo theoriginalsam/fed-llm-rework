@@ -590,6 +590,59 @@ pip uninstall torch torchvision torchaudio -y && pip install torch torchvision t
 
 ---
 
+## 9b. Reviewer Feedback Analysis (2026-05-22)
+
+Received 4 reviews on original submission: -2, -1, -2, +1. Full reviews on record.
+
+### What We Already Fixed
+
+| Reviewer Complaint | Fix Applied |
+|-------------------|-------------|
+| No FlexLoRA/FLoRA comparison | FlexLoRA implemented + compared all datasets |
+| Single dataset (Yelp only) | 3 datasets: Yelp, GSM8K, Alpaca |
+| Only α=0.5 | Added α=0.1 (5 seeds) |
+| Only 3 seeds, 10 rounds | 5 seeds, 20 rounds |
+| Hallucination rate on classification | Removed from Yelp |
+| Privacy overclaimed (MIA AUC ≈ 0.5) | Honest reframing — no formal DP claim |
+| Comm cost misattributed to SPA | Fixed: savings come from hetero ranks |
+| Weak baselines (homo + pad only) | Added FlexLoRA |
+| Narrow non-IID (α=0.5 only) | Added α=0.1 |
+
+### Still Not Addressed — Critical
+
+| Complaint | Priority | Action Needed |
+|-----------|----------|---------------|
+| Missing baselines: **HetLoRA, FedARA, Fed-PLoRA, Fed-HeLLo, LoRA-A2** | 🔴 CRITICAL | Read papers, implement at least HetLoRA |
+| Novelty unclear vs FlexLoRA | 🔴 CRITICAL | Subspace-consensus reframe (professor's insight) |
+| No convergence theory | 🟡 HIGH | Informal sketch at minimum |
+| SVD overhead not analyzed | 🟡 HIGH | Time SVD across all layers, report per-round cost |
+| Table I self-defined categories | 🟡 HIGH | Rewrite with formal definitions |
+| Rank allocation assumed fixed | 🟠 MEDIUM | Cite as limitation, not contribution |
+| Ablations (rank dist, participation) | 🟠 MEDIUM | Run 35/10/3/2 + K ablation |
+
+### Missing Baselines — Papers to Read
+
+The following were explicitly listed by reviewer 1 as "prior works not compared":
+1. **HetLoRA** (EMNLP 2024) — heterogeneous LoRA, zero-padding + sparsity masks
+2. **FedARA** — adaptive rank allocation for federated PEFT
+3. **Fed-PLoRA** — parallel one-rank adaptation
+4. **Fed-HeLLo** — heterogeneous LoRA allocation
+5. **LoRA-A2** — robust + efficient federated low-rank adaptation
+
+**Minimum required:** implement and compare HetLoRA (most cited, EMNLP venue = credible).
+Others can be cited in related work with honest comparison if implementation is infeasible.
+
+### Novelty Positioning (Critical Fix)
+
+Current paper positions SPA as "better projection." Reviewers correctly note this is incremental.
+
+**New positioning (professor's reframe):**
+> "We identify that heterogeneous-rank FL is fundamentally a subspace-consensus problem: SVD truncation at distribution time destroys minority client directions — not because they are noise, but because they are low-energy. We characterize when this failure occurs and show SPA-M's momentum stabilizes the subspace across rounds."
+
+This repositions the contribution from "cleaner SVD" to "diagnosing a structural failure mode" — a stronger scientific claim.
+
+---
+
 ## 10. FlexLoRA Paper Analysis (2026-05-18)
 
 Read FlexLoRA paper (arXiv 2402.11505v2) to verify rank comparison fairness.
