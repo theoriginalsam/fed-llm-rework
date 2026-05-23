@@ -835,3 +835,138 @@ for K in 10 20; do for seed in 42 43; do for method in hetero_spa spa_m; do
     --device cuda:1 >> logs/K${K}_${method}_s${seed}.log 2>&1 &
 done; done; done
 ```
+
+---
+
+## 12. HetLoRA Paper Analysis (2026-05-22)
+
+**Paper:** "Heterogeneous LoRA for Federated Fine-tuning of On-Device Foundation Models" (Cho et al., EMNLP 2024)
+**Venue:** EMNLP 2024 (CMU + Google Research) — credible, cited as missing baseline by Reviewer 1.
+
+### 12.1 Algorithm
+
+HetLoRA has three components, applied in sequence each communication round:
+
+**Step 1 — Distribution via Truncation:**
+- Server maintains global LoRA modules (B̄, Ā) at global rank r^(t) (starts at r_max)
+- Distributes to client k by truncating: sends B̄_{:, :r_k} ∈ ℝ^{d×r_k}, Ā_{:r_k, :} ∈ ℝ^{r_k×l}
+- No SVD — just truncate the rows/columns of the global matrices
+
+**Step 2 — Local Training with Rank Self-Pruning:**
+- Standard LoRA training + regularization term:
+  `λ ‖B_{k, :, r_kγ:r_k}‖ · ‖A_{k, r_kγ:r_k, :}‖`  (γ < 1, e.g. γ=0.99)
+- If last-rank norms shrink below initial → prune → client returns smaller (B_k, A_k)
+- Best γ = 0.99 (light pruning beats no pruning = γ=1.0; aggressive γ=0.85 hurts)
+- Client rank can decrease adaptively round-to-round
+
+**Step 3 — Sparsity-Weighted Aggregation:**
+- Zero-pad all clients to r_max: B_k ∈ ℝ^{d×r_max}, A_k ∈ ℝ^{r_max×l}
+- Compute sparsity weight: p_k ∝ ‖S_k‖/Z where S_k are singular values of ΔW_k = B_k A_k,
+  computed via ‖ΔW_k‖_F (cheap: tr(B^T B · A A^T) is O(r^3) for small r)
+- Aggregate **directly in (B, A) space** (NOT ΔW): 
+  B̄^(t+1) = Σ_k p_k B_k^(t,τ),  Ā^(t+1) = Σ_k p_k A_k^(t,τ)
+- No SVD at aggregation time
+
+**Their "Recon+SVD" baseline** = FlexLoRA = our current pipeline. HetLoRA beats it in their experiments.
+
+### 12.2 Experimental Setup
+
+| Aspect | HetLoRA paper | Our setup |
+|--------|--------------|-----------|
+| Model | PaLM 2 XXS/XS (~1-2B) | Qwen2.5-7B |
+| Task | Reddit ROUGE-L, MSC Perplexity | Yelp accuracy, GSM8K, Alpaca |
+| Clients | 100 train + 100 test | 50 |
+| Participation | 5 or 10/round | 5/round |
+| Rank dist | Power-law truncated α=0.1, [r_min, r_max] | {r4:20, r8:20, r16:5, r32:5} |
+| Rounds | 200 | 20 |
+| Seeds | 3 | 5 |
+
+**Their main result (Table 3):** HetLoRA beats HomoLoRA (best and worst rank), beats Recon+SVD, approaches full fine-tuning at ~0.003% parameters.
+
+### 12.3 Critical Analysis — The Non-Identifiability Flaw
+
+HetLoRA's Section 3.4 argues that reconstructing ΔW before aggregation loses cross-client information. Their math shows:
+
+> `avg(B₁A₁, B₂A₂) ≠ avg(B₁, B₂) · avg(A₁, A₂)` (off by cross-terms)
+
+This is factually correct. However, their method has a deeper problem they do not address:
+
+**LoRA is non-identifiable:** BA = (BQ)(Q⁻¹A) for any invertible Q ∈ ℝ^{r×r}.
+Two clients can learn identical functions but arrive at completely different (B,A) factorizations depending on their optimizer trajectory (initialization, gradient path, learning rate).
+
+When HetLoRA averages (B₁, B₂) and (A₁, A₂) directly, the result depends on which arbitrary rotation Q each client's SGD happened to choose — the aggregated (B̄, Ā) may not correspond to any meaningful average of the learned functions.
+
+**Our method's advantage:** Reconstructing ΔW = BA before aggregation maps all clients to the rotation-invariant representation — the full update matrix — before taking any average. The result is invariant to each client's (B, A) factorization choice. We then find the best rank-r approximation (Frobenius-optimal via truncated SVD) for redistribution.
+
+**Summary of the theoretical argument:**
+> HetLoRA aggregates in the non-canonical factored space (B,A), which is susceptible to rotational non-identifiability. Our spectral aggregation operates on ΔW, the rotation-invariant canonical representation. While HetLoRA's direct aggregation avoids the Recon+SVD approximation error, it introduces a potentially larger error from basis misalignment across clients.
+
+This is our primary differentiator from HetLoRA and the correct response to Reviewer 1.
+
+### 12.4 Method Comparison Table
+
+| Aspect | Hetero-Pad | HetLoRA | FlexLoRA | SPA | SPA-M (Ours) |
+|--------|------------|---------|---------|-----|-------------|
+| Aggregation space | (B,A) zero-padded | (B,A) sparsity-weighted | ΔW Euclidean | ΔW rank-weighted | ΔW momentum EMA |
+| Rotation-invariant | ✗ | ✗ | ✓ | ✓ | ✓ |
+| SVD at aggregation | ✗ | ✗ | ✗ | ✗ | ✗ |
+| SVD at distribution | ✗ | ✗ | ✓ | ✓ | ✓ |
+| Rank self-pruning | ✗ | ✓ | ✗ | ✗ | ✗ |
+| Momentum | ✗ | ✗ | ✗ | ✗ | ✓ |
+| Adaptive weighting | ✗ | ‖ΔW‖_F | data volume | rank × data vol | rank × data vol |
+
+### 12.5 Implementation Plan
+
+HetLoRA is the #1 missing baseline. Add `src/aggregation/hetlora.py`:
+
+```python
+class HetLoRAggregator:
+    """Sparsity-weighted aggregation in (B,A) space with truncation distribution."""
+    
+    def aggregate(self, client_updates):
+        # client_updates: list of {layer: (B_k, A_k, n_k)}
+        # Step 1: Compute Frobenius norm of ΔW_k = B_k A_k (cheap: tr(B^T B A A^T))
+        weights = {}
+        for k, (B, A, n) in enumerate(client_updates):
+            BtB = B.T @ B  # r×r
+            AAt = A @ A.T  # r×r
+            frobenius_sq = torch.trace(BtB @ AAt).item()
+            weights[k] = frobenius_sq ** 0.5  # = ||B_k A_k||_F
+        
+        # Step 2: Normalize weights
+        Z = sum(weights.values())
+        p = {k: w/Z for k,w in weights.items()}
+        
+        # Step 3: Zero-pad to r_max, weighted average in (B,A) space
+        B_agg = sum(p[k] * pad_to_rmax(B) for k,(B,A,n) in ...)
+        A_agg = sum(p[k] * pad_to_rmax(A) for k,(B,A,n) in ...)
+        return B_agg, A_agg
+    
+    def distribute(self, B_agg, A_agg, client_rank):
+        # Truncate: no SVD needed
+        return B_agg[:, :client_rank], A_agg[:client_rank, :]
+```
+
+**Key difference from current code:** Our server currently stores ΔW_agg. HetLoRA requires storing (B_agg, A_agg) at r_max. The distribution step is O(1) truncation vs. SVD.
+
+**Rank self-pruning:** Implement with γ=0.99 (default) and γ=1.0 (disabled) as hyperparameter. γ=1.0 = pure HetLoRA without pruning.
+
+**Integration:** Add `method=hetlora` to all experiment scripts. One flag in `fl_server.py` to switch aggregator.
+
+### 12.6 What HetLoRA Means for Our Paper Story
+
+**New 3-way comparison:**
+
+1. **Hetero-Pad / HomoLoRA**: Aggregate in (B,A) space, uniform weights, no SVD → worst quality
+2. **HetLoRA**: Aggregate in (B,A) space, Frobenius weights, no SVD → better, but non-identifiability issue
+3. **FlexLoRA/SPA/SPA-M**: Aggregate in ΔW space (rotation-invariant), SVD back to rank-r → most principled
+
+Expected empirical outcome: SPA ≈ SPA-M > HetLoRA > FlexLoRA > Hetero-Pad (under our regime — high non-IID, 7B model, Dirichlet α). Under low non-IID (α=0.5), all methods should converge to similar performance.
+
+If HetLoRA beats FlexLoRA/SPA empirically despite the non-identifiability argument — we report honestly and explain the trade-off: HetLoRA avoids SVD projection error at distribution; SPA avoids rotation misalignment at aggregation. The regimes where each wins is itself a contribution.
+
+**Action items:**
+- [ ] Implement `src/aggregation/hetlora.py` (1-2 days)
+- [ ] Add `hetlora` to run_yelp.py, run_gsm8k.py, run_alpaca.py
+- [ ] Run HetLoRA: Yelp both alphas (seeds 42-44 to start), GSM8K, Alpaca
+- [ ] Add to comparison tables alongside FlexLoRA and SPA-M

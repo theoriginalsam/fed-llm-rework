@@ -39,7 +39,8 @@ def load_base_model(device: str = "cuda"):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--method", type=str, default="hetero_spa", choices=METHODS)
+    parser.add_argument("--method", type=str, default="hetero_spa",
+                        choices=METHODS + ["hetlora"])
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--device", type=str, default="cuda")

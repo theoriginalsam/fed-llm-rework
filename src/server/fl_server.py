@@ -24,6 +24,7 @@ from src.aggregation.spa import SPAAggregator
 from src.aggregation.flexlora import FlexLoRAAggregator
 from src.aggregation.fedavg_homo import HomoAggregator, HeteroPadAggregator
 from src.aggregation.spa_momentum import SPAMomentumAggregator
+from src.aggregation.hetlora import HetLoRAAggregator
 from src.clients.lora_client import train_client
 from src.evaluation.metrics import evaluate_model
 from src.utils.logging_utils import ExperimentLogger
@@ -104,8 +105,8 @@ def run_federated(
     else:
         client_rank_map = build_client_rank_map(RANK_DISTRIBUTION)
 
-    # Extract method: hetero_pad sends (A,B) pairs; others send full ΔW
-    extract_method = "ab_pair" if method == "hetero_pad" else "full_w"
+    # Extract method: hetero_pad and hetlora send (A,B) pairs; others send full ΔW
+    extract_method = "ab_pair" if method in ("hetero_pad", "hetlora") else "full_w"
 
     # Build aggregator
     if method == "homo_r4":
@@ -121,6 +122,8 @@ def run_federated(
     elif method == "spa_m":
         aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=0.9, gamma=1.0,
                                            use_consensus=True, consensus_rank=4)
+    elif method == "hetlora":
+        aggregator = HetLoRAAggregator(max_rank=MAX_RANK)
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -128,8 +131,9 @@ def run_federated(
     logger.log(f"Starting {method} | seed={seed} | alpha={alpha} | tau={spa_tau}")
 
     # Global state: W_agg per layer {layer_key: tensor(d_out, d_in)}
-    # None until after first aggregation round
+    # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
     global_wagg: Optional[Dict[str, torch.Tensor]] = None
+    global_ba_hetlora: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
 
     round_results = []
 
@@ -159,7 +163,14 @@ def run_federated(
             else:
                 weight = len(client_datasets[cid]) / total_rw
 
-            if global_wagg is None:
+            if method == "hetlora":
+                if global_ba_hetlora is None:
+                    client_global = None
+                else:
+                    client_global = HetLoRAAggregator.distribute_to_client(
+                        global_ba_hetlora, rank, device
+                    )
+            elif global_wagg is None:
                 client_global = None
             else:
                 client_global = project_wagg_to_client(
@@ -185,6 +196,9 @@ def run_federated(
 
             if method == "hetero_pad":
                 aggregator.update(weights, weight, {}, {})
+            elif method == "hetlora":
+                # HetLoRA ignores data-volume weight; Frobenius weights computed internally
+                aggregator.update(weights)
             else:
                 aggregator.update(weights, weight)
 
@@ -199,6 +213,10 @@ def run_federated(
                 B = aggregator._b_accum[layer_key]   # (d_out, max_rank)
                 new_wagg[layer_key] = (B @ A).cpu()  # (d_out, d_in)
             global_wagg = new_wagg
+        elif method == "hetlora":
+            # HetLoRA stores (B, A) at max_rank; W_agg = B @ A used only for eval SVD path
+            global_ba_hetlora = aggregator.get_global_ba()
+            global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora.items()}
         else:
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
@@ -211,7 +229,12 @@ def run_federated(
             eval_rank = all_ranks[-1]
         else:  # "min" — original conservative setting
             eval_rank = all_ranks[0]
-        eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)
+        if method == "hetlora":
+            eval_lora = HetLoRAAggregator.distribute_to_client(
+                global_ba_hetlora, eval_rank, device
+            )
+        else:
+            eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)
 
         metrics = evaluate_model(
             base_model=base_model,

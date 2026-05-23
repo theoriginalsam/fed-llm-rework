@@ -42,6 +42,7 @@ METHODS = [
     "hetero_pad",
     "flexlora",
     "hetero_spa",
+    "hetlora",
     "spa_m",
 ]
 
