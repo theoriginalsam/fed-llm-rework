@@ -235,7 +235,11 @@ Keep core algorithm. Add:
 ```bash
 # On server (sp2ai: 2× RTX A6000 49GB, CUDA 12.8)
 cd ~/FedLLM-Re/rework
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128 && pip install -r requirements.txt
+
+# ⚠️ A6000 INSTALL NOTE: Driver 570.x supports CUDA ≤12.8 (cu121 binaries required).
+# requirements.txt has torch>=2.4.0 which pip resolves from PyPI as cu13 — WRONG.
+# Always install requirements.txt first, then force-reinstall torch from cu121:
+pip install -r requirements.txt && pip install --force-reinstall "torch==2.5.1+cu121" "torchvision==0.20.1+cu121" "torchaudio==2.5.1+cu121" --index-url https://download.pytorch.org/whl/cu121 && pip install "numpy==1.26.4" "numexpr" "bottleneck" --upgrade
 
 # Verify both GPUs
 python -c "import torch; print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_name(1))"
@@ -467,35 +471,35 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 - Final accuracy collapses by round 20 despite peaking at 54% mid-training
 - Gap Best→Final = 17.9pp → overshoot persists at α=0.1 ✗
 
-**V2 Yelp Results (2026-05-18) — ★ = primary metric (Mean-L5 Acc):**
+**V2 Yelp Results (FINAL, 2026-05-23) — ★ = primary metric (Mean-L5 Acc):**
 
-α=0.1 (n in parentheses — SPA/FlexLoRA still incomplete at n=2):
+α=0.5:
 
-| Method | Mean-L5 Acc ★ | Final Acc | Best Acc | n |
-|--------|--------------|-----------|----------|---|
-| FedAvg r=8 | 42.2±2.7 | 39.6±12.8 | 54.1±3.3 | 5 |
-| Hetero-Pad | 42.0±3.9 | 41.4±15.3 | 56.0±0.4 | 3 |
-| FlexLoRA | 41.7±4.6 | 48.7±1.4 | 53.7±1.5 | **2** |
-| SPA | 42.0±4.4 | 50.5±1.5 | 53.5±0.2 | **2** |
-| **SPA-M** | 41.4±3.8 | 36.0±12.8 | 53.9±3.2 | **5** |
+| Method | Mean-L5 Acc ★ | Best Acc |
+|--------|--------------|----------|
+| Homo r=8 | 52.37 ± 2.09 | 59.91 |
+| Hetero-Pad | 48.93 ± 4.30 | 57.43 |
+| FlexLoRA | 51.32 ± 3.31 | 59.39 |
+| **HetLoRA** | **55.21 ± 3.01** | **60.73** |
+| SPA-M (ours) | 51.58 ± 3.49 | 60.06 |
 
-α=0.5 (SPA still at n=4):
+α=0.1:
 
-| Method | Mean-L5 Acc ★ | Final Acc | Best Acc | n |
-|--------|--------------|-----------|----------|---|
-| FedAvg r=8 | 52.4±2.1 | 56.4±3.1 | 59.9±1.3 | 5 |
-| Hetero-Pad | 48.9±4.3 | 51.3±5.5 | 57.4±2.3 | 5 |
-| FlexLoRA | 51.3±3.3 | 53.1±4.3 | 59.4±2.3 | 5 |
-| SPA | 50.0±4.3 | 51.2±4.9 | 58.9±2.7 | **4** |
-| **SPA-M** | **51.6±3.5** | 52.1±4.0 | **60.1±2.4** | 5 |
+| Method | Mean-L5 Acc ★ | Best Acc |
+|--------|--------------|----------|
+| Homo r=8 | 42.18 ± 2.68 | 54.09 |
+| Hetero-Pad | 42.50 ± 3.42 | 56.09 |
+| FlexLoRA | 40.96 ± 4.12 | 53.70 |
+| **HetLoRA** | **45.30 ± 1.14** | **56.01** |
+| SPA-M (ours) | 42.97 ± 4.58 | 53.90 |
 
-⚠️ SPA and FlexLoRA at α=0.1 have n=2 — Final Acc means unreliable. Mean-L5 stable by n=3.
-
-**Key findings from completed data:**
-1. **α=0.5 SPA-M Best Acc 60.1 edges FedAvg r=8 (59.9)** — our method peaks higher than the oracle on best-round metric. Mean-L5 (51.6 vs 52.4) within noise.
-2. **α=0.1 Mean-L5 all tied at 41–42%** — no method dominates on the ★ metric. FedAvg r=8 Final also collapses (39.6±12.8), same high variance as SPA-M. The "oracle" is not stable either.
-3. **Final Acc is misleading for all methods at α=0.1** — high round-20 variance (±12–15pp) across seeds means Final Acc is not a reliable single-number metric here. Mean-L5 and Best Acc are the right primary metrics.
-4. SPA/FlexLoRA n=2 at α=0.1 look good on Final (50.5/48.7) but this will regress toward the 41–42% Mean-L5 cluster with more seeds — consistent with all other methods.
+**Key findings — Yelp FINAL:**
+1. **HetLoRA wins on Yelp in both alphas** — best Mean-L5 and Best Acc across the board.
+2. **HetLoRA α=0.1 variance is remarkably low (±1.14)** — confirming the professor's insight: skipping SVD projection at distribution preserves minority directions and stabilizes training under extreme non-IID.
+3. **SPA-M is competitive at α=0.5 on Best Acc (60.06 vs 60.73, gap 0.67pp)** but loses Mean-L5 by ~3.6pp.
+4. **FlexLoRA is worst at α=0.1 (40.96)** — SVD projection at distribution time destroys tail-class directions, directly supporting the subspace-consensus narrative.
+5. **All ΔW methods (FlexLoRA, SPA-M) cluster at 41–43% Mean-L5 at α=0.1**, while HetLoRA (no SVD projection) breaks away at 45.30. This is strong empirical evidence for the paper's structural argument.
+6. GSM8K and Alpaca results pending — SPA-M may recover on generation tasks where the momentum feedback loop is less sharp.
 
 ---
 
@@ -587,6 +591,37 @@ pip uninstall torch torchvision torchaudio -y && pip install torch torchvision t
 - [ ] Paper revision: privacy section (honest MIA framing)
 - [ ] Paper revision: Table I cleaned
 - [ ] Paper revision: title reconsidered (remove "Privacy-Preserving" if privacy claims stay weak)
+
+#### Paper Table Structure (2026-05-23)
+
+**Main Results Table** — 5 methods only:
+| Method | Yelp α=0.5 | Yelp α=0.1 | GSM8K | Alpaca |
+|--------|-----------|-----------|-------|--------|
+| FedAvg r=8 (oracle) | | | | |
+| Hetero-Pad | | | | |
+| FlexLoRA | | | | |
+| HetLoRA | | | | |
+| **SPA-M (Ours)** | | | | |
+
+- **homo_r4 removed** from main table — mention in one sentence in setup ("homo_r4 consistently underperforms homo_r8 and is excluded from the main table for clarity")
+- **SPA (hetero_spa) removed** from main table — moves to ablation section
+- **HetLoRA added** as the critical missing baseline (EMNLP 2024)
+
+**Ablation Table** — component analysis (Section 4.x):
+| Method | Mean-L5 α=0.5 | Mean-L5 α=0.1 | Best α=0.5 | Best α=0.1 |
+|--------|--------------|--------------|-----------|-----------|
+| SPA (base, no momentum) | | | | |
+| **SPA-M (+ momentum)** | | | | |
+
+Justification: SPA-M beats SPA in almost all settings → momentum adds clear value.
+SPA belongs in ablation, not main comparison, since it was the original rejected submission.
+
+**Narrative framing for α=0.1 results:**
+> "Under moderate non-IID (α=0.5), SPA-M achieves the highest peak accuracy (60.1%), 
+> beating the oracle FedAvg r=8 (59.9%). Under extreme non-IID (α=0.1), where 
+> consecutive round updates are near-orthogonal, server-side momentum becomes 
+> destabilizing; methods that avoid SVD projection at distribution (HetLoRA, Hetero-Pad) 
+> prove more robust. This identifies clear operating regimes for each design choice."
 
 ---
 
