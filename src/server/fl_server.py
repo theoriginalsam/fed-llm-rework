@@ -94,6 +94,7 @@ def run_federated(
     batch_size: int = BATCH_SIZE,
     eval_rank_strategy: str = "median",
     rank_weighted: bool = True,
+    hetlora_m_beta: float = 0.5,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -126,7 +127,7 @@ def run_federated(
     elif method == "hetlora":
         aggregator = HetLoRAAggregator(max_rank=MAX_RANK)
     elif method == "hetlora_m":
-        aggregator = HetLoRAMomentumAggregator(max_rank=MAX_RANK, beta=0.9)
+        aggregator = HetLoRAMomentumAggregator(max_rank=MAX_RANK, beta=hetlora_m_beta)
     else:
         raise ValueError(f"Unknown method: {method}")
 

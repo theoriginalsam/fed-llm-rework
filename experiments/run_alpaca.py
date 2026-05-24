@@ -46,6 +46,7 @@ def main():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--spa-tau", type=float, default=0.01)
     parser.add_argument("--results-dir", type=str, default="results_v2")
+    parser.add_argument("--hetlora-m-beta", type=float, default=0.5)
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "alpaca")
@@ -78,6 +79,7 @@ def main():
             device=args.device,
             num_rounds=NUM_ROUNDS,
             spa_tau=args.spa_tau,
+            hetlora_m_beta=args.hetlora_m_beta,
         )
 
     print("Alpaca experiments complete.")

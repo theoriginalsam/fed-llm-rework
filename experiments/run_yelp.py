@@ -55,6 +55,8 @@ def main():
                         help="Root results directory (default: results_v2)")
     parser.add_argument("--num-rounds", type=int, default=None,
                         help="Override number of rounds (default: from base_config)")
+    parser.add_argument("--hetlora-m-beta", type=float, default=0.5,
+                        help="EMA beta for hetlora_m (default: 0.5)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "yelp")
@@ -99,6 +101,7 @@ def main():
             num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
             batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
+            hetlora_m_beta=args.hetlora_m_beta,
         )
 
     print("\nAll Yelp experiments complete.")
