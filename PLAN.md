@@ -625,6 +625,51 @@ SPA belongs in ablation, not main comparison, since it was the original rejected
 
 ---
 
+## 9c. HetLoRA-M: Proposed New Method (2026-05-24)
+
+HetLoRA wins Yelp on both alphas. Key question: what makes it work? Comparison with Hetero-Pad isolates the **Frobenius norm weighting** as the driver (same aggregation space, same no-SVD distribution — only difference is weighting). This suggests two directions for improving SPA-M:
+
+### Option A — Frobenius Norm Weighting in SPA-M (Quick Ablation)
+Replace current `rank × dataset_size` client weighting in SPA-M with `‖ΔW_k‖_F`:
+- Already computing ΔW_k = B_k A_k, so norm is free via `tr(B^T B · A A^T)`
+- 2-line change in `src/aggregation/spa_momentum.py`
+- Tells us whether weighting alone explains HetLoRA's advantage over SPA-M
+
+### Option B — HetLoRA-M: Momentum on (B, A) Aggregation (New Method)
+Add EMA momentum directly to HetLoRA's (B, A) aggregation:
+
+```
+B_raw^(t) = Σ_k p_k · B_k^(t)     (Frobenius-weighted, same as HetLoRA)
+A_raw^(t) = Σ_k p_k · A_k^(t)
+
+B̄^(t+1) = β · B̄^(t) + (1−β) · B_raw^(t)
+Ā^(t+1) = β · Ā^(t) + (1−β) · A_raw^(t)
+
+Distribute to client k: truncate B̄^(t+1)[:, :r_k], Ā^(t+1)[:r_k, :]
+```
+
+**Why this avoids SPA-M's feedback loop:**
+SPA-M's instability at α=0.1 comes from: momentum applied to ΔW → fed back into client initialization → clients train relative to M_t → uploads are relative deviations, not absolute signals. Under near-orthogonal rounds, EMA accumulates noise.
+
+HetLoRA-M applies momentum to the aggregated **(B, A) directly**, not to ΔW. Clients initialize from truncated (B̄, Ā) — same as vanilla HetLoRA. The momentum smooths the global (B, A) matrices across rounds without creating the relative-deviation feedback. Low-rank clients still see their natural subspace positions (slots 1:r_k) smoothed over time, not reorganized by SVD energy ordering.
+
+**Expected behavior:**
+- α=0.5: HetLoRA-M > HetLoRA (momentum accelerates consistent updates)
+- α=0.1: HetLoRA-M ≈ HetLoRA or slightly better (momentum smooths noise without the feedback instability)
+
+**Implementation:** New file `src/aggregation/hetlora_m.py`. Extends `HetLoRAAggregator` with EMA buffers on (B̄, Ā). Add `method=hetlora_m` to all experiment runners.
+
+**Paper positioning if HetLoRA-M wins:**
+> "HetLoRA's (B,A)-space aggregation preserves minority client directions; SPA-M's ΔW momentum stabilizes convergence across rounds. HetLoRA-M combines both: Frobenius-weighted (B,A) aggregation with EMA momentum, inheriting direction preservation without the ΔW feedback loop. HetLoRA-M achieves the best of both design choices."
+
+**Action items:**
+- [ ] Option A: swap weighting in SPA-M, re-run Yelp 2 seeds to check if gap closes
+- [ ] Option B: implement `src/aggregation/hetlora_m.py`, add to all runners
+- [ ] Run HetLoRA-M: Yelp both alphas (3 seeds), GSM8K, Alpaca
+- [ ] Compare HetLoRA-M vs HetLoRA vs SPA-M in ablation table
+
+---
+
 ## 9b. Reviewer Feedback Analysis (2026-05-22)
 
 Received 4 reviews on original submission: -2, -1, -2, +1. Full reviews on record.
