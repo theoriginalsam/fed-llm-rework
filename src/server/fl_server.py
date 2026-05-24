@@ -25,6 +25,7 @@ from src.aggregation.flexlora import FlexLoRAAggregator
 from src.aggregation.fedavg_homo import HomoAggregator, HeteroPadAggregator
 from src.aggregation.spa_momentum import SPAMomentumAggregator
 from src.aggregation.hetlora import HetLoRAAggregator
+from src.aggregation.hetlora_m import HetLoRAMomentumAggregator
 from src.clients.lora_client import train_client
 from src.evaluation.metrics import evaluate_model
 from src.utils.logging_utils import ExperimentLogger
@@ -106,7 +107,7 @@ def run_federated(
         client_rank_map = build_client_rank_map(RANK_DISTRIBUTION)
 
     # Extract method: hetero_pad and hetlora send (A,B) pairs; others send full ΔW
-    extract_method = "ab_pair" if method in ("hetero_pad", "hetlora") else "full_w"
+    extract_method = "ab_pair" if method in ("hetero_pad", "hetlora", "hetlora_m") else "full_w"
 
     # Build aggregator
     if method == "homo_r4":
@@ -124,6 +125,8 @@ def run_federated(
                                            use_consensus=True, consensus_rank=4)
     elif method == "hetlora":
         aggregator = HetLoRAAggregator(max_rank=MAX_RANK)
+    elif method == "hetlora_m":
+        aggregator = HetLoRAMomentumAggregator(max_rank=MAX_RANK, beta=0.9)
     else:
         raise ValueError(f"Unknown method: {method}")
 
@@ -134,6 +137,7 @@ def run_federated(
     # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
     global_wagg: Optional[Dict[str, torch.Tensor]] = None
     global_ba_hetlora: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
+    global_ba_hetlora_m: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
 
     round_results = []
 
@@ -170,6 +174,13 @@ def run_federated(
                     client_global = HetLoRAAggregator.distribute_to_client(
                         global_ba_hetlora, rank, device
                     )
+            elif method == "hetlora_m":
+                if global_ba_hetlora_m is None:
+                    client_global = None
+                else:
+                    client_global = HetLoRAAggregator.distribute_to_client(
+                        global_ba_hetlora_m, rank, device
+                    )
             elif global_wagg is None:
                 client_global = None
             else:
@@ -196,8 +207,8 @@ def run_federated(
 
             if method == "hetero_pad":
                 aggregator.update(weights, weight, {}, {})
-            elif method == "hetlora":
-                # HetLoRA ignores data-volume weight; Frobenius weights computed internally
+            elif method in ("hetlora", "hetlora_m"):
+                # HetLoRA / HetLoRA-M ignore data-volume weight; Frobenius weights computed internally
                 aggregator.update(weights)
             else:
                 aggregator.update(weights, weight)
@@ -214,9 +225,11 @@ def run_federated(
                 new_wagg[layer_key] = (B @ A).cpu()  # (d_out, d_in)
             global_wagg = new_wagg
         elif method == "hetlora":
-            # HetLoRA stores (B, A) at max_rank; W_agg = B @ A used only for eval SVD path
             global_ba_hetlora = aggregator.get_global_ba()
             global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora.items()}
+        elif method == "hetlora_m":
+            global_ba_hetlora_m = aggregator.get_global_ba()
+            global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora_m.items()}
         else:
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
@@ -232,6 +245,10 @@ def run_federated(
         if method == "hetlora":
             eval_lora = HetLoRAAggregator.distribute_to_client(
                 global_ba_hetlora, eval_rank, device
+            )
+        elif method == "hetlora_m":
+            eval_lora = HetLoRAAggregator.distribute_to_client(
+                global_ba_hetlora_m, eval_rank, device
             )
         else:
             eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)
