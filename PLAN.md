@@ -471,35 +471,37 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 - Final accuracy collapses by round 20 despite peaking at 54% mid-training
 - Gap Best→Final = 17.9pp → overshoot persists at α=0.1 ✗
 
-**V2 Yelp Results (FINAL, 2026-05-23) — ★ = primary metric (Mean-L5 Acc):**
+**V2 Yelp Results (updated 2026-05-24) — ★ = primary metric (Mean-L5 Acc):**
 
 α=0.5:
 
-| Method | Mean-L5 Acc ★ | Best Acc |
-|--------|--------------|----------|
-| Homo r=8 | 52.37 ± 2.09 | 59.91 |
-| Hetero-Pad | 48.93 ± 4.30 | 57.43 |
-| FlexLoRA | 51.32 ± 3.31 | 59.39 |
-| **HetLoRA** | **55.21 ± 3.01** | **60.73** |
-| SPA-M (ours) | 51.58 ± 3.49 | 60.06 |
+| Method | Mean-L5 Acc ★ | Best Acc | n |
+|--------|--------------|----------|---|
+| Homo r=8 | 52.37 ± 2.09 | 59.91 | 5 |
+| Hetero-Pad | 48.93 ± 4.30 | 57.43 | 5 |
+| FlexLoRA | 51.32 ± 3.31 | 59.39 | 5 |
+| HetLoRA | 53.82 ± 3.54 | 60.15 | 5 |
+| **HetLoRA-M** | **53.93 ± 3.71** | 57.78 | ⚠️ 1 |
+| SPA-M | 51.58 ± 3.49 | 60.06 | 5 |
 
 α=0.1:
 
-| Method | Mean-L5 Acc ★ | Best Acc |
-|--------|--------------|----------|
-| Homo r=8 | 42.18 ± 2.68 | 54.09 |
-| Hetero-Pad | 42.50 ± 3.42 | 56.09 |
-| FlexLoRA | 40.96 ± 4.12 | 53.70 |
-| **HetLoRA** | **45.30 ± 1.14** | **56.01** |
-| SPA-M (ours) | 42.97 ± 4.58 | 53.90 |
+| Method | Mean-L5 Acc ★ | Best Acc | n |
+|--------|--------------|----------|---|
+| Homo r=8 | 42.18 ± 2.68 | 54.09 | 5 |
+| Hetero-Pad | 42.50 ± 3.42 | 56.09 | 5 |
+| FlexLoRA | 40.96 ± 4.12 | 53.70 | 5 |
+| **HetLoRA** | **43.32 ± 3.56** | **55.91** | 5 |
+| HetLoRA-M | — | — | running |
+| SPA-M | 42.97 ± 4.58 | 53.90 | 5 |
 
-**Key findings — Yelp FINAL:**
-1. **HetLoRA wins on Yelp in both alphas** — best Mean-L5 and Best Acc across the board.
-2. **HetLoRA α=0.1 variance is remarkably low (±1.14)** — confirming the professor's insight: skipping SVD projection at distribution preserves minority directions and stabilizes training under extreme non-IID.
-3. **SPA-M is competitive at α=0.5 on Best Acc (60.06 vs 60.73, gap 0.67pp)** but loses Mean-L5 by ~3.6pp.
-4. **FlexLoRA is worst at α=0.1 (40.96)** — SVD projection at distribution time destroys tail-class directions, directly supporting the subspace-consensus narrative.
-5. **All ΔW methods (FlexLoRA, SPA-M) cluster at 41–43% Mean-L5 at α=0.1**, while HetLoRA (no SVD projection) breaks away at 45.30. This is strong empirical evidence for the paper's structural argument.
-6. GSM8K and Alpaca results pending — SPA-M may recover on generation tasks where the momentum feedback loop is less sharp.
+**Key findings — Yelp (updated):**
+1. **HetLoRA-M α=0.5 (1 seed): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied. Need seeds 43,44 to confirm.
+2. **HetLoRA numbers revised downward with full 5 seeds**: α=0.5 was 55.21→53.82; α=0.1 was 45.30±1.14→43.32±3.56. Early 3-seed estimates were optimistic; variance is real.
+3. **HetLoRA still wins α=0.1** — all ΔW methods cluster at 41–43%, HetLoRA at 43.32. Gap narrowed but direction preserved.
+4. **FlexLoRA worst at α=0.1 (40.96)** — SVD projection destroys tail directions, confirms subspace-consensus narrative.
+5. **HetLoRA-M Best Acc (57.78) lower than HetLoRA (60.15)** at α=0.5 with 1 seed — early EMA warmup dip (rounds 2-4) costs peak accuracy. Mean-L5 recovers well.
+6. α=0.1 HetLoRA-M runs in progress — key test of whether momentum stays stable without SPA-M's feedback loop.
 
 ---
 
