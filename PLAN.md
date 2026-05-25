@@ -491,17 +491,17 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 | Homo r=8 | 42.18 ± 2.68 | 54.09 | 5 |
 | Hetero-Pad | 42.50 ± 3.42 | 56.09 | 5 |
 | FlexLoRA | 40.96 ± 4.12 | 53.70 | 5 |
-| **HetLoRA** | **43.32 ± 3.56** | **55.91** | 5 |
-| HetLoRA-M | — | — | running |
+| HetLoRA | 43.32 ± 3.56 | 55.91 | 5 |
+| **HetLoRA-M** | **48.96 ± 3.94** | **56.17** | 3 |
 | SPA-M | 42.97 ± 4.58 | 53.90 | 5 |
 
 **Key findings — Yelp (updated):**
-1. **HetLoRA-M α=0.5 (3 seeds): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied (+0.11pp). Best Acc lower (57.78 vs 60.15) due to early EMA warmup dip costing peak rounds.
-2. **HetLoRA numbers revised downward with full 5 seeds**: α=0.5 was 55.21→53.82; α=0.1 was 45.30±1.14→43.32±3.56. Early 3-seed estimates were optimistic; variance is real.
-3. **HetLoRA still wins α=0.1** — all ΔW methods cluster at 41–43%, HetLoRA at 43.32. Gap narrowed but direction preserved.
-4. **FlexLoRA worst at α=0.1 (40.96)** — SVD projection destroys tail directions, confirms subspace-consensus narrative.
-5. **HetLoRA-M Best Acc (57.78) lower than HetLoRA (60.15)** at α=0.5 with 1 seed — early EMA warmup dip (rounds 2-4) costs peak accuracy. Mean-L5 recovers well.
-6. α=0.1 HetLoRA-M runs in progress — key test of whether momentum stays stable without SPA-M's feedback loop.
+1. **HetLoRA-M α=0.1 (3 seeds): 48.96 vs HetLoRA 43.32 (+5.64pp)** — clear winner at extreme non-IID. Momentum in (B,A) space preserves minority directions AND smooths across rounds without ΔW feedback loop.
+2. **HetLoRA-M α=0.5 (3 seeds): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied (+0.11pp). Best Acc lower (57.78 vs 60.15) due to early EMA warmup dip costing peak rounds.
+3. **HetLoRA-M vs SPA-M at α=0.1: +5.99pp** — SPA-M collapses at extreme non-IID (42.97); HetLoRA-M stable (48.96).
+4. **HetLoRA numbers revised downward with full 5 seeds**: α=0.5 was 55.21→53.82; α=0.1 was 45.30±1.14→43.32±3.56. Early 3-seed estimates were optimistic; variance is real.
+5. **FlexLoRA worst at α=0.1 (40.96)** — SVD projection destroys tail directions, confirms subspace-consensus narrative.
+6. **HetLoRA-M Best Acc at α=0.1 (56.17) > HetLoRA (55.91)** — momentum lifts ceiling at extreme non-IID.
 
 ---
 

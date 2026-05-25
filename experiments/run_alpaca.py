@@ -42,6 +42,7 @@ def main():
     parser.add_argument("--method", type=str, default="hetero_spa",
                         choices=METHODS)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--spa-tau", type=float, default=0.01)
@@ -54,17 +55,17 @@ def main():
 
     model, tokenizer = load_base_model(args.device)
 
-    runs = [(m, s) for m in METHODS for s in ALPACA_SEEDS] if args.all else [(args.method, args.seed)]
+    runs = [(m, args.alpha, s) for m in METHODS for s in ALPACA_SEEDS] if args.all else [(args.method, args.alpha, args.seed)]
 
-    for method, seed in runs:
-        tag = f"{method}_alpha05_seed{seed}"
+    for method, alpha, seed in runs:
+        tag = f"{method}_alpha{str(alpha).replace('.','')}_seed{seed}"
         out_file = os.path.join(results_dir, f"{tag}.json")
         if os.path.exists(out_file):
             print(f"Skipping {tag}")
             continue
 
-        print(f"\nRunning Alpaca: {method} | seed={seed}")
-        client_datasets, eval_samples = load_alpaca(tokenizer, NUM_CLIENTS, alpha=0.5, seed=seed)
+        print(f"\nRunning Alpaca: {method} | alpha={alpha} | seed={seed}")
+        client_datasets, eval_samples = load_alpaca(tokenizer, NUM_CLIENTS, alpha=alpha, seed=seed)
 
         run_federated(
             method=method,
@@ -74,7 +75,7 @@ def main():
             test_dataset=eval_samples,
             dataset_config=ALPACA_CONFIG,
             seed=seed,
-            alpha=0.5,
+            alpha=alpha,
             results_dir=results_dir,
             device=args.device,
             num_rounds=NUM_ROUNDS,
