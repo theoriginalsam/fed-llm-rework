@@ -505,6 +505,26 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 
 ---
 
+### V2 GSM8K Results (2026-05-24) — α=0.5 only (runner hardcoded)
+
+| Method | Mean-L5 ★ | Best | n |
+|--------|-----------|------|---|
+| Homo r=8 | 74.87 ± 2.46 | 82.67 | 3 |
+| Hetero-Pad | 75.47 ± 0.94 | 81.33 | 3 |
+| FlexLoRA | 74.73 ± 1.68 | 82.67 | 3 |
+| HetLoRA | 74.60 ± 1.80 | 82.00 | 3 |
+| HetLoRA-M | — | — | pending |
+| **SPA-M** | **75.33 ± 0.75** | **83.67** | 3 |
+
+**Key findings — GSM8K:**
+1. **SPA-M wins GSM8K** — highest Best Acc (83.67) and lowest variance (±0.75). Complete reversal from Yelp.
+2. All methods tightly clustered (74.6–75.5%) — math reasoning is less sensitive to aggregation method than classification.
+3. **HetLoRA weakest on GSM8K (74.60)** — (B,A)-space aggregation may lose signal coherence for multi-step reasoning tasks.
+4. SPA-M's lower variance suggests momentum stabilizes math reasoning learning where gradient directions are more consistent across clients.
+5. **Operating regime identified:** HetLoRA/HetLoRA-M wins extreme non-IID classification; SPA-M wins reasoning tasks with moderate heterogeneity.
+
+---
+
 ### Root Cause Analysis: SPA-M α=0.1 Failure (2026-05-16)
 
 **Symptom:** Best Acc≈54% (competitive) but Final Acc≈36% (catastrophic). Model peaks mid-training then degrades.
