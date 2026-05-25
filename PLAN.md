@@ -481,7 +481,7 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 | Hetero-Pad | 48.93 ± 4.30 | 57.43 | 5 |
 | FlexLoRA | 51.32 ± 3.31 | 59.39 | 5 |
 | HetLoRA | 53.82 ± 3.54 | 60.15 | 5 |
-| **HetLoRA-M** | **53.93 ± 3.71** | 57.78 | ⚠️ 1 |
+| **HetLoRA-M** | **53.93 ± 3.71** | 57.78 | 3 |
 | SPA-M | 51.58 ± 3.49 | 60.06 | 5 |
 
 α=0.1:
@@ -496,7 +496,7 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 | SPA-M | 42.97 ± 4.58 | 53.90 | 5 |
 
 **Key findings — Yelp (updated):**
-1. **HetLoRA-M α=0.5 (1 seed): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied. Need seeds 43,44 to confirm.
+1. **HetLoRA-M α=0.5 (3 seeds): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied (+0.11pp). Best Acc lower (57.78 vs 60.15) due to early EMA warmup dip costing peak rounds.
 2. **HetLoRA numbers revised downward with full 5 seeds**: α=0.5 was 55.21→53.82; α=0.1 was 45.30±1.14→43.32±3.56. Early 3-seed estimates were optimistic; variance is real.
 3. **HetLoRA still wins α=0.1** — all ΔW methods cluster at 41–43%, HetLoRA at 43.32. Gap narrowed but direction preserved.
 4. **FlexLoRA worst at α=0.1 (40.96)** — SVD projection destroys tail directions, confirms subspace-consensus narrative.
