@@ -505,23 +505,28 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 
 ---
 
-### V2 GSM8K Results (2026-05-24) — α=0.5 only (runner hardcoded)
+### V2 GSM8K Results (updated 2026-05-26) — both metrics shown
 
-| Method | Mean-L5 ★ | Best | n |
-|--------|-----------|------|---|
-| Homo r=8 | 74.87 ± 2.46 | 82.67 | 3 |
-| Hetero-Pad | 75.47 ± 0.94 | 81.33 | 3 |
-| FlexLoRA | 74.73 ± 1.68 | 82.67 | 3 |
-| HetLoRA | 74.60 ± 1.80 | 82.00 | 3 |
-| HetLoRA-M | — | — | pending |
-| **SPA-M** | **75.33 ± 0.75** | **83.67** | 3 |
+α=0.5 (3 seeds):
 
-**Key findings — GSM8K:**
-1. **SPA-M wins GSM8K** — highest Best Acc (83.67) and lowest variance (±0.75). Complete reversal from Yelp.
-2. All methods tightly clustered (74.6–75.5%) — math reasoning is less sensitive to aggregation method than classification.
-3. **HetLoRA weakest on GSM8K (74.60)** — (B,A)-space aggregation may lose signal coherence for multi-step reasoning tasks.
-4. SPA-M's lower variance suggests momentum stabilizes math reasoning learning where gradient directions are more consistent across clients.
-5. **Operating regime identified:** HetLoRA/HetLoRA-M wins extreme non-IID classification; SPA-M wins reasoning tasks with moderate heterogeneity.
+| Method | AUC ★ | Mean-L5 | Best | n |
+|--------|-------|---------|------|---|
+| Homo r=8 | 76.23 ± 0.74 | 74.87 ± 2.46 | 82.67 | 3 |
+| Hetero-Pad | 76.05 ± 1.06 | 75.47 ± 0.94 | 81.33 | 3 |
+| FlexLoRA | 76.85 ± 0.87 | 74.73 ± 1.68 | 82.67 | 3 |
+| HetLoRA | 75.43 ± 0.52 | 75.00 ± 1.57 | 82.00 | 3 |
+| **HetLoRA-M** | 75.58 ± 0.40 | **76.47 ± 0.52** | 81.33 | 3 |
+| **SPA-M** | **77.03 ± 0.49** | 75.33 ± 0.75 | **83.67** | 3 |
+
+α=0.1: running (homo_r8 done: AUC=76.35, Mean-L5=73.90, Best=84.00)
+
+**Key findings — GSM8K (revised):**
+1. **AUC vs Mean-L5 diverge** — reveals different convergence profiles: SPA-M peaks early (AUC 77.03 > Mean-L5 75.33), HetLoRA-M still improving at round 20 (AUC 75.58 < Mean-L5 76.47).
+2. **SPA-M wins AUC** (77.03) — fastest early convergence on math reasoning. FlexLoRA 2nd (76.85).
+3. **HetLoRA-M wins Mean-L5** (76.47) and has lowest variance (±0.40) — most stable at convergence, still climbing at round 20. May need 30+ rounds to fully converge.
+4. **SPA-M drifts late**: AUC−Mean-L5 = +1.7pp gap suggests slight late-round regression under momentum.
+5. All methods cluster tightly (75.4–77.0% AUC) — math reasoning less sensitive to aggregation than classification.
+6. **Revised regime**: SPA-M wins early convergence on reasoning; HetLoRA-M wins stability/convergence quality. Gap is small — paper should show both metrics.
 
 ---
 
