@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# run_missing.sh — 32 missing runs, single GPU, sequential
-# Yelp (2) → GSM8K alpha=0.1 (15) → Alpaca alpha=0.1 (15)
+# run_missing.sh — 38 missing runs, single GPU, sequential
+# Yelp (2) → GSM8K alpha=0.1 (15) + hetlora_m alpha=0.5 (3) → Alpaca alpha=0.1 (15) + hetlora_m alpha=0.5 (3)
 #
 # Usage: bash run_missing.sh
 
@@ -10,7 +10,7 @@ mkdir -p logs
 
 DEVICE=cuda:0
 
-echo "Starting 32 missing runs on $DEVICE — $(date)"
+echo "Starting 38 missing runs on $DEVICE — $(date)"
 echo "Logs: logs/missing_runs.log"
 
 {
@@ -69,7 +69,17 @@ python experiments/run_alpaca.py --method spa_m     --alpha 0.1 --seed 42 --devi
 python experiments/run_alpaca.py --method spa_m     --alpha 0.1 --seed 43 --device $DEVICE
 python experiments/run_alpaca.py --method spa_m     --alpha 0.1 --seed 44 --device $DEVICE
 
-echo "=== All 32 runs complete — $(date) ==="
+echo "=== GSM8K hetlora_m alpha=0.5 seeds 42 43 44 ==="
+python experiments/run_gsm8k.py --method hetlora_m  --alpha 0.5 --seed 42 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+python experiments/run_gsm8k.py --method hetlora_m  --alpha 0.5 --seed 43 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+python experiments/run_gsm8k.py --method hetlora_m  --alpha 0.5 --seed 44 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+
+echo "=== Alpaca hetlora_m alpha=0.5 seeds 42 43 44 ==="
+python experiments/run_alpaca.py --method hetlora_m  --alpha 0.5 --seed 42 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+python experiments/run_alpaca.py --method hetlora_m  --alpha 0.5 --seed 43 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+python experiments/run_alpaca.py --method hetlora_m  --alpha 0.5 --seed 44 --device $DEVICE --results-dir results_hetloram_b05 --hetlora-m-beta 0.5
+
+echo "=== All 38 runs complete — $(date) ==="
 
 } > logs/missing_runs.log 2>&1 &
 
