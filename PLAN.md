@@ -471,37 +471,37 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 - Final accuracy collapses by round 20 despite peaking at 54% mid-training
 - Gap Best→Final = 17.9pp → overshoot persists at α=0.1 ✗
 
-**V2 Yelp Results (updated 2026-05-24) — ★ = primary metric (Mean-L5 Acc):**
+**V2 Yelp Results (updated 2026-05-26) — ★ = primary metric (AUC):**
 
-α=0.5:
+α=0.5 (HetLoRA-M: 3 seeds, others: 5 seeds):
 
-| Method | Mean-L5 Acc ★ | Best Acc | n |
-|--------|--------------|----------|---|
-| Homo r=8 | 52.37 ± 2.09 | 59.91 | 5 |
-| Hetero-Pad | 48.93 ± 4.30 | 57.43 | 5 |
-| FlexLoRA | 51.32 ± 3.31 | 59.39 | 5 |
-| HetLoRA | 53.82 ± 3.54 | 60.15 | 5 |
-| **HetLoRA-M** | **53.93 ± 3.71** | 57.78 | 3 |
-| SPA-M | 51.58 ± 3.49 | 60.06 | 5 |
+| Method | AUC ★ | Mean-L5 | Best |
+|--------|-------|---------|------|
+| Homo r=8 | 46.28 ± 1.00 | 52.37 ± 2.09 | 59.91 |
+| Hetero-Pad | 44.59 ± 4.48 | 48.93 ± 4.30 | 57.43 |
+| FlexLoRA | 46.15 ± 1.65 | 51.32 ± 3.31 | 59.39 |
+| HetLoRA | 47.19 ± 3.26 | 53.31 ± 3.33 | 59.91 |
+| **HetLoRA-M** | **47.47 ± 2.63** | **53.93 ± 3.71** | 57.78 |
+| SPA-M | 47.00 ± 2.00 | 51.58 ± 3.49 | 60.06 |
 
-α=0.1:
+α=0.1 (HetLoRA-M: 3 seeds, others: 5 seeds):
 
-| Method | Mean-L5 Acc ★ | Best Acc | n |
-|--------|--------------|----------|---|
-| Homo r=8 | 42.18 ± 2.68 | 54.09 | 5 |
-| Hetero-Pad | 42.50 ± 3.42 | 56.09 | 5 |
-| FlexLoRA | 40.96 ± 4.12 | 53.70 | 5 |
-| HetLoRA | 43.32 ± 3.56 | 55.91 | 5 |
-| **HetLoRA-M** | **48.96 ± 3.94** | **56.17** | 3 |
-| SPA-M | 42.97 ± 4.58 | 53.90 | 5 |
+| Method | AUC ★ | Mean-L5 | Best |
+|--------|-------|---------|------|
+| Homo r=8 | 39.28 ± 1.75 | 42.18 ± 2.68 | 54.09 |
+| Hetero-Pad | 40.47 ± 1.55 | 42.50 ± 3.42 | 56.09 |
+| FlexLoRA | 39.42 ± 1.95 | 40.96 ± 4.12 | 53.70 |
+| HetLoRA | 41.48 ± 2.54 | 44.47 ± 3.93 | 56.34 |
+| **HetLoRA-M** | **43.15 ± 3.95** | **47.63 ± 3.72** | **56.45** |
+| SPA-M | 39.99 ± 2.10 | 42.97 ± 4.58 | 53.90 |
 
-**Key findings — Yelp (updated):**
-1. **HetLoRA-M α=0.1 (3 seeds): 48.96 vs HetLoRA 43.32 (+5.64pp)** — clear winner at extreme non-IID. Momentum in (B,A) space preserves minority directions AND smooths across rounds without ΔW feedback loop.
-2. **HetLoRA-M α=0.5 (3 seeds): 53.93 ≈ HetLoRA 53.82** — momentum not hurting, essentially tied (+0.11pp). Best Acc lower (57.78 vs 60.15) due to early EMA warmup dip costing peak rounds.
-3. **HetLoRA-M vs SPA-M at α=0.1: +5.99pp** — SPA-M collapses at extreme non-IID (42.97); HetLoRA-M stable (48.96).
-4. **HetLoRA numbers revised downward with full 5 seeds**: α=0.5 was 55.21→53.82; α=0.1 was 45.30±1.14→43.32±3.56. Early 3-seed estimates were optimistic; variance is real.
-5. **FlexLoRA worst at α=0.1 (40.96)** — SVD projection destroys tail directions, confirms subspace-consensus narrative.
-6. **HetLoRA-M Best Acc at α=0.1 (56.17) > HetLoRA (55.91)** — momentum lifts ceiling at extreme non-IID.
+**Key findings — Yelp (final):**
+1. **HetLoRA-M wins both alphas on both AUC and Mean-L5** — the only method to lead on all primary metrics across all heterogeneity levels.
+2. **α=0.1 AUC: HetLoRA-M 43.15 vs HetLoRA 41.48 (+1.67pp), vs SPA-M 39.99 (+3.16pp)** — extreme non-IID is HetLoRA-M's regime.
+3. **α=0.5 AUC: HetLoRA-M 47.47 vs HetLoRA 47.19 (+0.28pp)** — tied, but HetLoRA-M is consistent.
+4. **SPA-M α=0.5: Best=60.06 but Mean-L5=51.58 (gap=+8.5pp)** — peaks early then oscillates badly. AUC penalises this correctly.
+5. **Yelp: AUC < Mean-L5 for all methods** — classification improves monotonically; opposite of GSM8K. AUC captures slower early-round warmup.
+6. **FlexLoRA worst at α=0.1 AUC (39.42)** — SVD projection destroys minority client directions, confirms subspace-consensus narrative.
 
 ---
 
