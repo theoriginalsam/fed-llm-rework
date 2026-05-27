@@ -505,6 +505,27 @@ Seeds: 42–46. Both alphas re-run after git pull + correct seeds.
 
 ---
 
+### V2 Alpaca Results (2026-05-27) — α=0.5 only so far
+
+| Method | AUC ★ | Mean-L5 | Best |
+|--------|-------|---------|------|
+| Homo r=8 | 0.4135 ± 0.0150 | 0.4200 ± 0.0146 | 0.4251 |
+| Hetero-Pad | 0.4033 ± 0.0136 | 0.4163 ± 0.0135 | 0.4211 |
+| FlexLoRA | **0.4140 ± 0.0161** | 0.4189 ± 0.0155 | 0.4248 |
+| HetLoRA | 0.4017 ± 0.0206 | 0.4110 ± 0.0231 | 0.4151 |
+| HetLoRA-M | 0.4002 ± 0.0165 | 0.4164 ± 0.0178 | 0.4204 |
+| SPA-M | 0.4127 ± 0.0142 | **0.4200 ± 0.0137** | **0.4251** |
+
+α=0.1: running.
+
+**Key findings — Alpaca:**
+1. **All methods within 1.4pp AUC** — not statistically significant. Aggregation method doesn't matter for instruction following.
+2. This is expected: Alpaca uses uniform random splits (no Dirichlet), so there is no real data heterogeneity for any method to exploit.
+3. **HetLoRA-M lowest AUC (0.4002)** on Alpaca — momentum in (B,A) adds no value when data is homogeneous; slight EMA warmup cost hurts early rounds.
+4. **Paper narrative**: HetLoRA-M's advantage is specific to genuine data heterogeneity (Yelp classification). On IID-like instruction data, all methods are equivalent — a clean ablation of when our method matters.
+
+---
+
 ### V2 GSM8K Results (updated 2026-05-26) — both metrics shown
 
 α=0.5 (3 seeds):
