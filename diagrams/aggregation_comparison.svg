@@ -1,0 +1,187 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1800" height="1080" viewBox="0 0 1800 1080" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Aggregation-space comparison for heterogeneous LoRA FL</title>
+  <desc id="desc">Three-column comparison of dense Delta W with SVD projection, HetLoRA factor-space aggregation, and HetLoRA-M factor-space momentum.</desc>
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="11" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="13" markerHeight="10" refX="11" refY="5" orient="auto">
+      <path d="M0,0 L12,5 L0,10 Z" fill="#334155"/>
+    </marker>
+    <marker id="arrowRed" markerWidth="13" markerHeight="10" refX="11" refY="5" orient="auto">
+      <path d="M0,0 L12,5 L0,10 Z" fill="#dc2626"/>
+    </marker>
+    <marker id="arrowPurple" markerWidth="13" markerHeight="10" refX="11" refY="5" orient="auto">
+      <path d="M0,0 L12,5 L0,10 Z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="13" markerHeight="10" refX="11" refY="5" orient="auto">
+      <path d="M0,0 L12,5 L0,10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .bg { fill: #f8fafc; }
+      .ink { fill: #0f172a; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .muted { fill: #475569; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .title { font-size: 50px; font-weight: 850; letter-spacing: 0; }
+      .subtitle { font-size: 26px; }
+      .head { font-size: 32px; font-weight: 830; }
+      .label { font-size: 26px; font-weight: 760; }
+      .tiny { font-size: 21px; }
+      .col { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#shadow); }
+      .step { fill: #ffffff; stroke: #d1d5db; stroke-width: 2.2; }
+      .bad { fill: #fef2f2; stroke: #fca5a5; }
+      .good { fill: #f0fdfa; stroke: #5eead4; }
+      .best { fill: #faf5ff; stroke: #c4b5fd; }
+      .line { stroke: #334155; stroke-width: 5; fill: none; marker-end: url(#arrow); }
+      .lineRed { stroke: #dc2626; stroke-width: 5; fill: none; marker-end: url(#arrowRed); }
+      .lineTeal { stroke: #0f766e; stroke-width: 5; fill: none; marker-end: url(#arrowTeal); }
+      .linePurple { stroke: #7c3aed; stroke-width: 5; fill: none; marker-end: url(#arrowPurple); }
+      .dash { stroke-dasharray: 10 9; }
+      .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; }
+    </style>
+    <symbol id="matrix" viewBox="0 0 100 100">
+      <rect x="8" y="8" width="84" height="84" rx="8" fill="currentColor" opacity="0.18"/>
+      <rect x="17" y="17" width="15" height="15" rx="3" fill="currentColor"/>
+      <rect x="39" y="17" width="15" height="15" rx="3" fill="currentColor" opacity="0.75"/>
+      <rect x="61" y="17" width="15" height="15" rx="3" fill="currentColor" opacity="0.45"/>
+      <rect x="17" y="39" width="15" height="15" rx="3" fill="currentColor" opacity="0.75"/>
+      <rect x="39" y="39" width="15" height="15" rx="3" fill="currentColor"/>
+      <rect x="61" y="39" width="15" height="15" rx="3" fill="currentColor" opacity="0.35"/>
+      <rect x="17" y="61" width="15" height="15" rx="3" fill="currentColor" opacity="0.45"/>
+      <rect x="39" y="61" width="15" height="15" rx="3" fill="currentColor" opacity="0.35"/>
+      <rect x="61" y="61" width="15" height="15" rx="3" fill="currentColor"/>
+    </symbol>
+    <symbol id="factors" viewBox="0 0 140 100">
+      <rect x="8" y="14" width="42" height="72" rx="7" fill="currentColor" opacity="0.22"/>
+      <rect x="15" y="22" width="28" height="10" rx="3" fill="currentColor"/>
+      <rect x="15" y="39" width="28" height="10" rx="3" fill="currentColor" opacity="0.7"/>
+      <rect x="15" y="56" width="28" height="10" rx="3" fill="currentColor" opacity="0.55"/>
+      <rect x="63" y="32" width="68" height="36" rx="7" fill="currentColor" opacity="0.22"/>
+      <rect x="72" y="41" width="12" height="18" rx="3" fill="currentColor"/>
+      <rect x="91" y="41" width="12" height="18" rx="3" fill="currentColor" opacity="0.7"/>
+      <rect x="110" y="41" width="12" height="18" rx="3" fill="currentColor" opacity="0.55"/>
+      <text x="56" y="58" fill="#0f172a" font-size="24" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">×</text>
+    </symbol>
+    <symbol id="svd" viewBox="0 0 100 100">
+      <text x="50" y="58" text-anchor="middle" font-size="58" fill="currentColor" font-family="Georgia, serif" font-weight="900">Σ</text>
+      <path d="M18 72C39 24 61 24 82 72" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" opacity="0.45"/>
+    </symbol>
+    <symbol id="warning" viewBox="0 0 90 90">
+      <path d="M45 9l36 67H9z" fill="currentColor"/>
+      <rect x="41" y="30" width="8" height="25" rx="4" fill="#fff"/>
+      <circle cx="45" cy="64" r="4.5" fill="#fff"/>
+    </symbol>
+    <symbol id="loop" viewBox="0 0 88 88">
+      <path d="M65 25c-8-11-25-15-38-6-14 9-17 28-8 42 10 15 31 17 44 4" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>
+      <path d="M65 25l-4-17 17 5z" fill="currentColor"/>
+    </symbol>
+    <symbol id="scissors" viewBox="0 0 90 90">
+      <circle cx="24" cy="25" r="11" fill="none" stroke="currentColor" stroke-width="7"/>
+      <circle cx="24" cy="64" r="11" fill="none" stroke="currentColor" stroke-width="7"/>
+      <path d="M34 31l39 35M34 58l39-34" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="scale" viewBox="0 0 90 90">
+      <path d="M45 13v60M25 28h40M45 20l-25 8M45 20l25 8" stroke="currentColor" stroke-width="7" stroke-linecap="round" fill="none"/>
+      <path d="M13 33l12 25 12-25M53 33l12 25 12-25" stroke="currentColor" stroke-width="6" stroke-linejoin="round" fill="none"/>
+      <path d="M18 59h14M58 59h14M31 77h28" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+
+  <rect class="bg" width="1800" height="1080"/>
+  <text class="ink title" x="900" y="74" text-anchor="middle">Three Aggregation Spaces, Three Behaviors</text>
+  <text class="muted subtitle" x="900" y="116" text-anchor="middle">Same heterogeneous clients; different server geometry</text>
+
+  <g transform="translate(70 168)">
+    <rect class="col" x="0" y="0" width="510" height="775" rx="30"/>
+    <rect x="25" y="26" width="460" height="76" rx="20" fill="#eff6ff" stroke="#bfdbfe" stroke-width="2"/>
+    <text class="ink head" x="255" y="74" text-anchor="middle">Dense ΔW + SVD</text>
+    <text class="muted tiny" x="255" y="126" text-anchor="middle">FlexLoRA / SPA / SPA-M family</text>
+
+    <rect class="step" x="75" y="166" width="360" height="104" rx="22"/>
+    <use href="#factors" x="100" y="168" width="120" height="86" color="#2563eb"/>
+    <text class="ink label" x="307" y="203" text-anchor="middle">reconstruct</text>
+    <text class="muted tiny mono" x="307" y="239" text-anchor="middle">ΔWₖ = BₖAₖ</text>
+
+    <path class="line" d="M255 274 V326"/>
+    <rect class="step" x="75" y="336" width="360" height="104" rx="22"/>
+    <use href="#matrix" x="115" y="338" width="90" height="90" color="#0f766e"/>
+    <text class="ink label" x="306" y="375" text-anchor="middle">average ΔW</text>
+    <text class="muted tiny mono" x="306" y="411" text-anchor="middle">Σ pₖ ΔWₖ</text>
+
+    <path class="line" d="M255 444 V496"/>
+    <rect class="step bad" x="75" y="506" width="360" height="126" rx="22"/>
+    <use href="#svd" x="108" y="516" width="86" height="86" color="#dc2626"/>
+    <text class="ink label" x="309" y="546" text-anchor="middle">rank projection</text>
+    <text class="muted tiny mono" x="309" y="582" text-anchor="middle">UΣVᵀ → top r</text>
+    <text class="muted tiny" x="309" y="613" text-anchor="middle">minority directions can vanish</text>
+
+    <path class="lineRed dash" d="M255 636 V688"/>
+    <rect x="75" y="698" width="360" height="58" rx="17" fill="#fee2e2" stroke="#f87171" stroke-width="2"/>
+    <use href="#warning" x="94" y="706" width="42" height="42" color="#dc2626"/>
+    <text class="ink tiny" x="278" y="734" text-anchor="middle" font-weight="760">fragile at α=0.1</text>
+  </g>
+
+  <g transform="translate(645 168)">
+    <rect class="col" x="0" y="0" width="510" height="775" rx="30"/>
+    <rect x="25" y="26" width="460" height="76" rx="20" fill="#ecfdf5" stroke="#bbf7d0" stroke-width="2"/>
+    <text class="ink head" x="255" y="74" text-anchor="middle">Factor Space</text>
+    <text class="muted tiny" x="255" y="126" text-anchor="middle">HetLoRA</text>
+
+    <rect class="step" x="75" y="166" width="360" height="104" rx="22"/>
+    <use href="#factors" x="100" y="168" width="120" height="86" color="#16a34a"/>
+    <text class="ink label" x="307" y="203" text-anchor="middle">keep B,A</text>
+    <text class="muted tiny mono" x="307" y="239" text-anchor="middle">no ΔW canonicalization</text>
+
+    <path class="lineTeal" d="M255 274 V326"/>
+    <rect class="step good" x="75" y="336" width="360" height="126" rx="22"/>
+    <use href="#scale" x="105" y="354" width="82" height="82" color="#0f766e"/>
+    <text class="ink label" x="312" y="374" text-anchor="middle">Frobenius weights</text>
+    <text class="muted tiny mono" x="312" y="412" text-anchor="middle">pₖ ∝ ‖BₖAₖ‖F</text>
+    <text class="muted tiny" x="312" y="441" text-anchor="middle">pad slots, average factors</text>
+
+    <path class="lineTeal" d="M255 466 V520"/>
+    <rect class="step good" x="75" y="530" width="360" height="104" rx="22"/>
+    <use href="#scissors" x="110" y="540" width="82" height="82" color="#0f766e"/>
+    <text class="ink label" x="313" y="568" text-anchor="middle">truncate</text>
+    <text class="muted tiny mono" x="313" y="604" text-anchor="middle">B[:, :r], A[:r, :]</text>
+
+    <path class="lineTeal dash" d="M255 638 V688"/>
+    <rect x="75" y="698" width="360" height="58" rx="17" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="2"/>
+    <text class="ink tiny" x="255" y="734" text-anchor="middle" font-weight="760">preserves tail directions</text>
+  </g>
+
+  <g transform="translate(1220 168)">
+    <rect class="col" x="0" y="0" width="510" height="775" rx="30"/>
+    <rect x="25" y="26" width="460" height="76" rx="20" fill="#f5f3ff" stroke="#ddd6fe" stroke-width="2"/>
+    <text class="ink head" x="255" y="74" text-anchor="middle">Factor Space + Momentum</text>
+    <text class="muted tiny" x="255" y="126" text-anchor="middle">HetLoRA-M</text>
+
+    <rect class="step" x="75" y="166" width="360" height="104" rx="22"/>
+    <use href="#factors" x="100" y="168" width="120" height="86" color="#7c3aed"/>
+    <text class="ink label" x="307" y="203" text-anchor="middle">raw HetLoRA</text>
+    <text class="muted tiny mono" x="307" y="239" text-anchor="middle">Braw, Araw</text>
+
+    <path class="linePurple" d="M255 274 V326"/>
+    <rect class="step best" x="75" y="336" width="360" height="150" rx="22"/>
+    <use href="#loop" x="104" y="369" width="82" height="82" color="#7c3aed"/>
+    <text class="ink label" x="314" y="372" text-anchor="middle">EMA in B,A</text>
+    <text class="muted tiny mono" x="314" y="410" text-anchor="middle">B̄ ← βB̄+(1−β)Braw</text>
+    <text class="muted tiny mono" x="314" y="441" text-anchor="middle">Ā ← βĀ+(1−β)Araw</text>
+    <text class="muted tiny" x="314" y="471" text-anchor="middle">β=0.5, bias corrected</text>
+
+    <path class="linePurple" d="M255 490 V540"/>
+    <rect class="step best" x="75" y="550" width="360" height="104" rx="22"/>
+    <use href="#scissors" x="110" y="560" width="82" height="82" color="#7c3aed"/>
+    <text class="ink label" x="313" y="588" text-anchor="middle">truncate</text>
+    <text class="muted tiny" x="313" y="624" text-anchor="middle">no SVD, no ΔW feedback</text>
+
+    <path class="linePurple dash" d="M255 658 V688"/>
+    <rect x="75" y="698" width="360" height="58" rx="17" fill="#ede9fe" stroke="#a78bfa" stroke-width="2"/>
+    <text class="ink tiny" x="255" y="734" text-anchor="middle" font-weight="760">stable under high non-IID</text>
+  </g>
+
+  <rect x="110" y="985" width="1580" height="62" rx="18" fill="#0f172a"/>
+  <text x="900" y="1025" text-anchor="middle" fill="#ffffff" font-size="28" font-weight="780" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    Design rule: apply momentum after consensus in the same space clients receive, not after a rotating SVD basis.
+  </text>
+</svg>
