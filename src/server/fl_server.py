@@ -95,6 +95,8 @@ def run_federated(
     eval_rank_strategy: str = "median",
     rank_weighted: bool = True,
     hetlora_m_beta: float = 0.5,
+    clients_per_round: int = CLIENTS_PER_ROUND,
+    rank_distribution: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -105,7 +107,8 @@ def run_federated(
     if fixed_rank is not None:
         client_rank_map = {cid: fixed_rank for cid in range(NUM_CLIENTS)}
     else:
-        client_rank_map = build_client_rank_map(RANK_DISTRIBUTION)
+        dist = rank_distribution if rank_distribution is not None else RANK_DISTRIBUTION
+        client_rank_map = build_client_rank_map(dist)
 
     # Extract method: hetero_pad and hetlora send (A,B) pairs; others send full ΔW
     extract_method = "ab_pair" if method in ("hetero_pad", "hetlora", "hetlora_m") else "full_w"
@@ -150,7 +153,7 @@ def run_federated(
         round_start = time.time()
 
         eligible = [cid for cid in range(NUM_CLIENTS) if len(client_datasets[cid]) > 0]
-        selected = random.sample(eligible, min(CLIENTS_PER_ROUND, len(eligible)))
+        selected = random.sample(eligible, min(clients_per_round, len(eligible)))
         aggregator.reset()
 
         # Rank-weighted aggregation: weight ∝ rank × dataset_size
