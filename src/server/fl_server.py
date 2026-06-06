@@ -95,6 +95,7 @@ def run_federated(
     eval_rank_strategy: str = "median",
     rank_weighted: bool = True,
     hetlora_m_beta: float = 0.5,
+    spa_m_beta: float = 0.9,
     clients_per_round: int = CLIENTS_PER_ROUND,
     rank_distribution: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
@@ -125,7 +126,7 @@ def run_federated(
     elif method == "hetero_spa":
         aggregator = SPAAggregator(max_rank=MAX_RANK, tau=spa_tau)
     elif method == "spa_m":
-        aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=0.9, gamma=1.0,
+        aggregator = SPAMomentumAggregator(max_rank=MAX_RANK, beta=spa_m_beta, gamma=1.0,
                                            use_consensus=True, consensus_rank=4)
     elif method == "hetlora":
         aggregator = HetLoRAAggregator(max_rank=MAX_RANK)

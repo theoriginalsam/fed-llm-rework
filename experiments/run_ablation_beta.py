@@ -1,11 +1,18 @@
 """
-Beta ablation for HetLoRA-M.
+Beta ablation — HetLoRA-M and SPA-M at matched β values.
 
-Sweeps beta in {0.3, 0.5, 0.7} on Yelp alpha=0.1, 3 seeds.
-Isolates the effect of the EMA decay rate on convergence stability.
+Sweeps beta in {0.3, 0.5, 0.7} for BOTH HetLoRA-M and SPA-M on Yelp alpha=0.1, 3 seeds.
+
+Why both methods: if we only ablate HetLoRA-M, a reviewer can argue that HetLoRA-M wins
+just because β=0.5 is better than SPA-M's default β_max=0.9, not because of adapter-space
+vs ΔW-space momentum placement. Testing both at the same β isolates the architectural
+difference (feedback loop) from the hyperparameter difference.
+
+Expected result: HetLoRA-M should lead SPA-M at every β value, with the gap widest
+at high β (high momentum amplifies the feedback loop in SPA-M).
 
 Usage:
-  python experiments/run_ablation_beta.py --beta 0.3 --seed 42
+  python experiments/run_ablation_beta.py --method hetlora_m --beta 0.5 --seed 42
   python experiments/run_ablation_beta.py --all
 """
 
@@ -23,8 +30,9 @@ from src.data.yelp import load_yelp
 from src.server.fl_server import run_federated
 
 BETA_VALUES = [0.3, 0.5, 0.7]
-ALPHA = 0.1          # extreme non-IID — where beta matters most
-SEEDS = [42, 43, 44]
+METHODS     = ["hetlora_m", "spa_m"]
+ALPHA       = 0.1
+SEEDS       = [42, 43, 44]
 RESULTS_DIR = "results_ablation/beta"
 
 
@@ -47,26 +55,33 @@ def load_base_model(device):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--beta", type=float, default=0.5, choices=BETA_VALUES)
+    parser.add_argument("--method", type=str, default="hetlora_m", choices=METHODS)
+    parser.add_argument("--beta", type=float, default=0.5)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--all", action="store_true")
+    parser.add_argument("--all", action="store_true",
+                        help="Run all methods × betas × seeds")
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
 
     os.makedirs(os.path.join(RESULTS_DIR, "yelp"), exist_ok=True)
     model, tokenizer = load_base_model(args.device)
 
-    runs = [(b, s) for b in BETA_VALUES for s in SEEDS] if args.all else [(args.beta, args.seed)]
+    runs = (
+        [(m, b, s) for m in METHODS for b in BETA_VALUES for s in SEEDS]
+        if args.all
+        else [(args.method, args.beta, args.seed)]
+    )
 
-    for beta, seed in runs:
-        tag = f"hetlora_m_beta{str(beta).replace('.','')}_alpha{str(ALPHA).replace('.','')}_seed{seed}"
+    for method, beta, seed in runs:
+        beta_str = str(beta).replace('.', '')
+        tag = f"{method}_beta{beta_str}_alpha{str(ALPHA).replace('.','')}_seed{seed}"
         out_file = os.path.join(RESULTS_DIR, "yelp", f"{tag}.json")
         if os.path.exists(out_file):
             print(f"Skipping {tag} — already done.")
             continue
 
         print(f"\n{'='*60}")
-        print(f"Beta ablation: beta={beta} | alpha={ALPHA} | seed={seed}")
+        print(f"Beta ablation: method={method} | beta={beta} | alpha={ALPHA} | seed={seed}")
         print(f"{'='*60}")
 
         client_datasets, eval_samples = load_yelp(
@@ -77,7 +92,7 @@ def main():
         )
 
         run_federated(
-            method="hetlora_m",
+            method=method,
             base_model=model,
             tokenizer=tokenizer,
             client_datasets=client_datasets,
@@ -90,14 +105,13 @@ def main():
             num_rounds=NUM_ROUNDS,
             batch_size=BATCH_SIZE,
             hetlora_m_beta=beta,
-            # save under the tag so results don't collide with main grid
-            # (ExperimentLogger uses method+seed+alpha; we rename after)
+            spa_m_beta=beta,
         )
 
-        # Rename output to include beta in filename
+        # Rename output to include method + beta in filename
         default_out = os.path.join(
             RESULTS_DIR, "yelp",
-            f"hetlora_m_alpha{str(ALPHA).replace('.','')}_seed{seed}.json"
+            f"{method}_alpha{str(ALPHA).replace('.','')}_seed{seed}.json"
         )
         if os.path.exists(default_out) and not os.path.exists(out_file):
             os.rename(default_out, out_file)

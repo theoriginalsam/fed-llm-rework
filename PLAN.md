@@ -236,9 +236,9 @@ Keep core algorithm. Add:
 # On server (sp2ai: 2× RTX A6000 49GB, CUDA 12.8)
 cd ~/FedLLM-Re/rework
 
-# ⚠️ A6000 INSTALL NOTE: Driver 570.x supports CUDA ≤12.8 (cu121 binaries required).
-# requirements.txt has torch>=2.4.0 which pip resolves from PyPI as cu13 — WRONG.
-# Always install requirements.txt first, then force-reinstall torch from cu121:
+# ⚠️ A6000 INSTALL NOTE: Driver 570.x, CUDA 12.8. cu121 binaries required.
+# CRITICAL ORDER: install requirements.txt FIRST (gets other deps), then force-reinstall
+# torch from cu121 LAST — otherwise requirements.txt pulls cu13 from PyPI and overrides it.
 pip install -r requirements.txt && pip install --force-reinstall "torch==2.5.1+cu121" "torchvision==0.20.1+cu121" "torchaudio==2.5.1+cu121" --index-url https://download.pytorch.org/whl/cu121 && pip install "numpy==1.26.4" "numexpr" "bottleneck" --upgrade
 
 # Verify both GPUs
@@ -622,9 +622,9 @@ nohup bash -c '... homo_r8 seeds 43,44 && hetero_pad seeds 42,43,44,46 && flexlo
 - [ ] Alpaca (same methods)
 - [ ] Rank distribution ablation (35/10/3/2) — 1 seed each after main results
 
-**Environment note:** sp2ai has torch 2.12.0 (CUDA 13.0) which conflicts with driver 570.x (CUDA 12.8). Fix:
+**Environment note:** sp2ai has Driver 570.x, CUDA 12.8. cu121 is correct. The trap: always install requirements.txt FIRST, then force-reinstall torch cu121 LAST — otherwise requirements.txt pulls a cu13 build from PyPI and overrides it.
 ```bash
-pip uninstall torch torchvision torchaudio -y && pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install -r requirements.txt && pip install --force-reinstall "torch==2.5.1+cu121" "torchvision==0.20.1+cu121" "torchaudio==2.5.1+cu121" --index-url https://download.pytorch.org/whl/cu121
 ```
 
 ### Phase 5: Analysis
