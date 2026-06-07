@@ -107,7 +107,7 @@ def main():
         # Rename to include K in filename
         default_out = os.path.join(
             RESULTS_DIR, "yelp",
-            f"{method}_alpha{str(ALPHA).replace('.','')}_seed{seed}.json"
+            f"{method}_seed{seed}_alpha{str(ALPHA).replace('.','')}.json"
         )
         if os.path.exists(default_out) and not os.path.exists(out_file):
             os.rename(default_out, out_file)
