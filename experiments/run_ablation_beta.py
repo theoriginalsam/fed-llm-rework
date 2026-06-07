@@ -63,7 +63,6 @@ def main():
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()
 
-    os.makedirs(os.path.join(RESULTS_DIR, "yelp"), exist_ok=True)
     model, tokenizer = load_base_model(args.device)
 
     runs = (
@@ -74,10 +73,13 @@ def main():
 
     for method, beta, seed in runs:
         beta_str = str(beta).replace('.', '')
-        tag = f"{method}_beta{beta_str}_alpha{str(ALPHA).replace('.','')}_seed{seed}"
-        out_file = os.path.join(RESULTS_DIR, "yelp", f"{tag}.json")
+        # Save into beta-specific subdir — filename stays {method}_seed{seed}_alpha{alpha}.json
+        subdir = os.path.join(RESULTS_DIR, "yelp", f"beta{beta_str}")
+        os.makedirs(subdir, exist_ok=True)
+        out_file = os.path.join(subdir,
+                                f"{method}_seed{seed}_alpha{str(ALPHA).replace('.','')}.json")
         if os.path.exists(out_file):
-            print(f"Skipping {tag} — already done.")
+            print(f"Skipping beta={beta} {method} seed={seed} — already done.")
             continue
 
         print(f"\n{'='*60}")
@@ -100,22 +102,14 @@ def main():
             dataset_config=YELP_CONFIG,
             seed=seed,
             alpha=ALPHA,
-            results_dir=os.path.join(RESULTS_DIR, "yelp"),
+            results_dir=subdir,
             device=args.device,
             num_rounds=NUM_ROUNDS,
             batch_size=BATCH_SIZE,
             hetlora_m_beta=beta,
             spa_m_beta=beta,
         )
-
-        # Rename output to include method + beta in filename
-        default_out = os.path.join(
-            RESULTS_DIR, "yelp",
-            f"{method}_seed{seed}_alpha{str(ALPHA).replace('.','')}.json"
-        )
-        if os.path.exists(default_out) and not os.path.exists(out_file):
-            os.rename(default_out, out_file)
-            print(f"Saved → {out_file}")
+        print(f"Saved → {out_file}")
 
     print("\nBeta ablation complete.")
 
