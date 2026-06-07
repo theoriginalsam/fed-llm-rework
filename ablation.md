@@ -65,12 +65,15 @@ results_ablation/
 
 ### Status (as of 2026-06-07)
 
+9 total result files existed at first check (3 beta + 6 K). The `.ipynb_checkpoints/` file
+is a Jupyter artifact — not a real result, do not count it.
+
 | Subdir | Files moved | How identified |
 |--------|-------------|----------------|
-| `beta03/` | hetlora_m seeds 42,43,44 | Runs 1–3 completed before GPU/script stop. Old script saved flat — moved manually. |
+| `beta03/` | hetlora_m seeds 42,43,44 ✓ | Runs 1–3 done (old script saved flat). 3 files = first full beta group. Moved manually. |
 | `beta05/` | — | New script saves here automatically |
 | `beta07/` | — | New script saves here automatically |
-| `spa_m` all betas | — | Not yet started |
+| `spa_m` all betas | — | Not yet started (cuda:1 still running) |
 
 ### If GPU stops mid-run
 Check how far it got:
@@ -120,10 +123,13 @@ nohup bash -c 'cd /home/sp2ai/FedLLM-Re/rework && python experiments/run_ablatio
 
 ### Status (as of 2026-06-07)
 
+6 K result files at first check (ignore `.ipynb_checkpoints/` — Jupyter artifact, not a real result).
+6 files = exactly runs 1–6 = all K=5 complete.
+
 | Subdir | Files moved | How identified |
 |--------|-------------|----------------|
-| `k5/` | hetlora_m seeds 42,43 / hetlora seeds 42,43 / spa_m seeds 42,43 | Runs 1–6 completed (all K=5). Identified by sequential order — 6 files present = first full K group. Moved manually. |
-| `k10/` | — | Script currently running here (cuda:0) |
+| `k5/` | hetlora_m seeds 42,43 / hetlora seeds 42,43 / spa_m seeds 42,43 ✓ | 6 files = first full K group (2 seeds × 3 methods). Moved manually. |
+| `k10/` | — | Script currently running (cuda:0) — new script saves here automatically |
 | `k20/` | — | Not yet started |
 
 ### If GPU stops mid-run
