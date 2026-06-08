@@ -65,26 +65,39 @@ results_ablation/
 
 ### Status (as of 2026-06-07)
 
-9 total result files existed at first check (3 beta + 6 K). The `.ipynb_checkpoints/` file
-is a Jupyter artifact — not a real result, do not count it.
+**WARNING:** Beta ablation was started with the OLD script (before subdir fix). It runs flat
+and overwrites files across beta groups. All data is recoverable from `logs/ablation_beta.log`.
 
-| Subdir | Files moved | How identified |
-|--------|-------------|----------------|
-| `beta03/` | hetlora_m seeds 42,43,44 ✓ | Runs 1–3 done (old script saved flat). 3 files = first full beta group. Moved manually. |
-| `beta05/` | — | New script saves here automatically |
-| `beta07/` | — | New script saves here automatically |
-| `spa_m` all betas | — | Not yet started (cuda:1 still running) |
+| Subdir | Contents | Seeds | Notes |
+|--------|----------|-------|-------|
+| `beta03/` | hetlora_m 42,43,44 + spa_m 42,43 ✓ | 5/6 | spa_m seed=44 in progress — move flat file when done |
+| `beta05/` | hetlora_m 42,43,44 ✓ | 3/3 | Recovered from log (overwritten by β=0.7 before manual move) |
+| `beta07/` | hetlora_m 42,43,44 ✓ | 3/3 | Recovered from log |
+| `spa_m β=0.5/0.7` | — | 0 | Still running on cuda:1 |
 
-### If GPU stops mid-run
-Check how far it got:
+**Preliminary results (2026-06-07):**
+
+| Method | β | AUC (%) | MeanL5 (%) | Best (%) | Seeds |
+|--------|---|---------|-----------|---------|-------|
+| HetLoRA-M | 0.3 | 41.31 ±4.85 | 44.53 ±7.23 | 56.89 | 3 |
+| HetLoRA-M | 0.5 | 40.72 ±4.01 | 43.88 ±6.44 | 56.46 | 3 |
+| HetLoRA-M | 0.7 | 39.85 ±5.89 | 41.77 ±8.88 | 56.78 | 3 |
+| SPA-M | 0.3 | 39.82 ±1.92 | 42.54 ±2.78 | 53.12 | 2 |
+| SPA-M | 0.5 | pending | — | — | 0 |
+| SPA-M | 0.7 | pending | — | — | 0 |
+
+HetLoRA-M leads SPA-M at β=0.3 by **+1.49 pp**. HetLoRA-M degrades gracefully with β (−0.73 pp/step).
+
+### After leaving for 20 hrs — recovery command
+Both processes still run OLD script (nohup doesn't reload code). Overwrites will happen.
+Recover everything from logs after runs complete:
 ```bash
-grep -E "Beta ablation:|Skipping|complete" logs/ablation_beta.log | tail -30
+git pull
+python experiments/recover_from_log.py --type beta --log logs/ablation_beta.log --out results_ablation/beta/yelp
 ```
-Count completed runs from the top of the run order table above.  
-Files in flat `beta/yelp/` (not in a subdir) = from the last completed beta group.  
-Move them to the right subdir, then rerun — the script skips existing files automatically.
+Script skips incomplete runs (< 20 rounds) and existing files automatically.
 
-### Rerun command
+### Rerun command (new script, saves to subdirs correctly)
 ```bash
 nohup bash -c 'cd /home/sp2ai/FedLLM-Re/rework && python experiments/run_ablation_beta.py --all --device cuda:1' > logs/ablation_beta.log 2>&1 & echo "PID: $!"
 ```
@@ -123,24 +136,30 @@ nohup bash -c 'cd /home/sp2ai/FedLLM-Re/rework && python experiments/run_ablatio
 
 ### Status (as of 2026-06-07)
 
-6 K result files at first check (ignore `.ipynb_checkpoints/` — Jupyter artifact, not a real result).
-6 files = exactly runs 1–6 = all K=5 complete.
+**WARNING:** K ablation also started with OLD script. Overwrites will happen across K groups.
+Recover from `logs/ablation_k.log` after runs complete.
 
-| Subdir | Files moved | How identified |
-|--------|-------------|----------------|
-| `k5/` | hetlora_m seeds 42,43 / hetlora seeds 42,43 / spa_m seeds 42,43 ✓ | 6 files = first full K group (2 seeds × 3 methods). Moved manually. |
-| `k10/` | — | Script currently running (cuda:0) — new script saves here automatically |
-| `k20/` | — | Not yet started |
+| Subdir | Contents | Seeds | Notes |
+|--------|----------|-------|-------|
+| `k5/` | hetlora_m 42,43 / hetlora 42,43 / spa_m 42,43 ✓ | 6/6 | Moved manually |
+| `k10/` | hetlora_m 42,43 / hetlora 42 ✓ | 3/6 | Moved manually (runs 7–9) |
+| `k20/` | — | 0 | Still running |
 
-### If GPU stops mid-run
+**Preliminary results (2026-06-07):**
+
+| Method | K=5 AUC | K=10 AUC | K=20 AUC |
+|--------|---------|---------|---------|
+| HetLoRA-M | 42.28 ±4.10 | 44.29 ±5.92 | pending |
+| HetLoRA | 42.32 ±0.76 | 45.38 ±0.00 (1 seed) | pending |
+| SPA-M | 39.81 ±1.77 | pending | pending |
+
+### After leaving for 20 hrs — recovery command
 ```bash
-grep -E "K ablation:|Skipping|complete" logs/ablation_k.log | tail -30
+git pull
+python experiments/recover_from_log.py --type k --log logs/ablation_k.log --out results_ablation/k_participation/yelp
 ```
-Files in flat `k_participation/yelp/` without a subdir = from current K group in progress.  
-Count files to determine which K group: 1–2 files per method suggest partial K=10 run.  
-Move completed files to `k10/` (or whichever K is active), rerun to finish the rest.
 
-### Rerun command
+### Rerun command (new script, saves to subdirs correctly)
 ```bash
 nohup bash -c 'cd /home/sp2ai/FedLLM-Re/rework && python experiments/run_ablation_k.py --all --device cuda:0' > logs/ablation_k.log 2>&1 & echo "PID: $!"
 ```
@@ -204,25 +223,40 @@ nohup bash -c 'cd /home/sp2ai/FedLLM-Re/rework && python experiments/run_ablatio
 
 ## Quick Recovery Cheatsheet
 
-### Identify what's done
-```bash
-# Count files per subdir
-find results_ablation -name "*.json" | grep -v checkpoint | sort
+### The overwrite problem
+The logger always saves `{method}_seed{seed}_alpha01.json` regardless of beta/K value.
+When a new run starts with the same method+seed, it **silently overwrites** the previous file.
+Old script had no subdir logic so all runs in a group landed in the same flat folder.
 
-# Check log for last completed run
-grep "Beta ablation:\|K ablation:\|Rank dist ablation:\|complete" logs/ablation_beta.log | tail -20
-grep "Beta ablation:\|K ablation:\|Rank dist ablation:\|complete" logs/ablation_k.log | tail -20
+### The solution
+1. **New scripts** (after fix) save into subdirs automatically — no manual moves needed.
+2. **nohup logs** capture all stdout including every round's metrics — full recovery possible even after overwrites.
+3. **recover_from_log.py** reads the log and reconstructs correct JSON files into subdirs.
+
+### Recovery commands (run after processes finish)
+```bash
+# Beta ablation
+python experiments/recover_from_log.py --type beta --log logs/ablation_beta.log --out results_ablation/beta/yelp
+
+# K participation ablation
+python experiments/recover_from_log.py --type k --log logs/ablation_k.log --out results_ablation/k_participation/yelp
+
+# Always dry-run first to verify
+python experiments/recover_from_log.py --type beta --log logs/ablation_beta.log --out results_ablation/beta/yelp --dry-run
 ```
 
-### Move flat files to correct subdir
-If files landed flat (no subdir), use the run order tables above to identify which group they belong to, then:
+### Identify what's done
 ```bash
-mkdir -p results_ablation/<type>/yelp/<subdir>
-mv results_ablation/<type>/yelp/{method}_seed{seed}_alpha01.json results_ablation/<type>/yelp/<subdir>/
+# See all result files
+find results_ablation -name "*.json" | grep -v checkpoint | sort
+
+# Check log progress
+grep "Beta ablation:" logs/ablation_beta.log | tail -5
+grep "K ablation:" logs/ablation_k.log | tail -5
 ```
 
 ### The script skips already-completed runs
-After moving files and rerunning, the script checks if the output file exists in the subdir and skips it. Safe to rerun at any time.
+After recovery, rerunning the ablation script is safe — it checks if the subdir file exists and skips it.
 
 ---
 
