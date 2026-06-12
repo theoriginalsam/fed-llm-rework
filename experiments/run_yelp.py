@@ -57,6 +57,8 @@ def main():
                         help="Override number of rounds (default: from base_config)")
     parser.add_argument("--hetlora-m-beta", type=float, default=0.5,
                         help="EMA beta for hetlora_m (default: 0.5)")
+    parser.add_argument("--ema-eval", action="store_true",
+                        help="EMA control: also evaluate EMA-smoothed model each round (homo_r8, hetero_pad, flexlora only)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "yelp")
@@ -102,6 +104,7 @@ def main():
             spa_tau=args.spa_tau,
             batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
             hetlora_m_beta=args.hetlora_m_beta,
+            ema_eval=args.ema_eval,
         )
 
     print("\nAll Yelp experiments complete.")

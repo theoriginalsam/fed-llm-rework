@@ -29,6 +29,7 @@ from src.aggregation.hetlora_m import HetLoRAMomentumAggregator
 from src.clients.lora_client import train_client
 from src.evaluation.metrics import evaluate_model
 from src.utils.logging_utils import ExperimentLogger
+from analysis.ema_eval_hook import EMAEvalHook
 
 
 def build_client_rank_map(rank_distribution: Dict[str, int]) -> Dict[int, int]:
@@ -98,6 +99,7 @@ def run_federated(
     spa_m_beta: float = 0.9,
     clients_per_round: int = CLIENTS_PER_ROUND,
     rank_distribution: Optional[Dict[str, int]] = None,
+    ema_eval: bool = False,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -137,6 +139,9 @@ def run_federated(
 
     logger = ExperimentLogger(method, seed, alpha, results_dir)
     logger.log(f"Starting {method} | seed={seed} | alpha={alpha} | tau={spa_tau}")
+
+    _EMA_CONTROL_METHODS = {"homo_r8", "hetero_pad", "flexlora"}
+    ema_hook = EMAEvalHook(beta=0.5, space="deltaw") if (ema_eval and method in _EMA_CONTROL_METHODS) else None
 
     # Global state: W_agg per layer {layer_key: tensor(d_out, d_in)}
     # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
@@ -268,9 +273,26 @@ def run_federated(
             device=device,
         )
 
+        ema_metrics = {}
+        if ema_hook is not None:
+            smoothed_wagg = ema_hook.update(global_wagg)
+            ema_eval_lora = project_wagg_to_client(smoothed_wagg, eval_rank, method, spa_tau, device)
+            ema_metrics = evaluate_model(
+                base_model=base_model,
+                tokenizer=tokenizer,
+                global_lora_weights=ema_eval_lora,
+                rank=eval_rank,
+                test_dataset=test_dataset,
+                dataset_config=dataset_config,
+                device=device,
+            )
+
         round_time = time.time() - round_start
         record = {"round": round_num, "avg_loss": float(np.mean(round_losses)),
                   "round_time_s": round_time, **metrics}
+        if ema_hook is not None:
+            record["acc_raw_eval"] = metrics.get("accuracy")
+            record["acc_ema_eval"] = ema_metrics.get("accuracy")
         round_results.append(record)
 
         # Update round-level bar with key metrics
