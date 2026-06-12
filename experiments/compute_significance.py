@@ -5,8 +5,11 @@ Pairs by seed — only seeds present for BOTH methods are used.
 AUC = mean accuracy over all rounds in the JSON.
 
 Usage:
-  python experiments/compute_significance.py --results results/V2 --alpha 01
-  python experiments/compute_significance.py --results results/V2 --alpha 01 --verbose
+  python experiments/compute_significance.py --results results_v2/yelp --alpha 01
+  python experiments/compute_significance.py --results results_v2/yelp --extra results_hetloram_b05/yelp --alpha 01
+  python experiments/compute_significance.py --results results_v2/yelp --extra results_hetloram_b05/yelp --alpha 01 --verbose
+
+--extra: additional directory searched for hetlora_m files only (handles split storage).
 """
 
 import os
@@ -84,8 +87,10 @@ def paired_ttest(a_vals, b_vals, paired_seeds):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--results", default="results/V2",
-                        help="Directory containing flat JSON result files")
+    parser.add_argument("--results", default="results_v2/yelp",
+                        help="Primary results directory")
+    parser.add_argument("--extra", default=None,
+                        help="Extra directory searched for hetlora_m files only (handles split storage)")
     parser.add_argument("--alpha", default="01",
                         help="Alpha suffix in filename, e.g. '01' for alpha=0.1")
     parser.add_argument("--verbose", action="store_true")
@@ -94,8 +99,13 @@ def main():
     results_dir = args.results
     alpha = args.alpha
 
-    # Load HetLoRA-M seeds
+    # Load HetLoRA-M seeds — merge from primary + extra dir if provided
     hetlora_m = load_seeds(results_dir, "hetlora_m", alpha)
+    if args.extra:
+        extra = load_seeds(args.extra, "hetlora_m", alpha)
+        for s, auc in extra.items():
+            if s not in hetlora_m:
+                hetlora_m[s] = auc
     if not hetlora_m:
         print(f"ERROR: No hetlora_m files found in {results_dir} for alpha={alpha}")
         return
