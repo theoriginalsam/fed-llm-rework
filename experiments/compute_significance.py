@@ -35,6 +35,9 @@ def compute_auc(rounds):
 def load_seeds(results_dir, method_stem, alpha):
     """
     Load all JSON files for a given method and alpha.
+    Handles both filename conventions:
+      - {method}_seed{seed}_alpha{alpha}.json  (old)
+      - {method}_alpha{alpha}_seed{seed}.json  (new, run_yelp.py)
     Returns dict: seed (int) -> AUC (float)
     """
     seed_aucs = {}
@@ -44,15 +47,24 @@ def load_seeds(results_dir, method_stem, alpha):
         if " (1)" in fname:  # skip duplicate copies
             continue
         stem = fname.replace(".json", "")
-        # e.g. hetlora_m_seed42_alpha01
-        if not stem.startswith(method_stem + "_seed"):
+        if not stem.startswith(method_stem + "_"):
             continue
-        if f"_alpha{alpha}" not in stem:
+        if f"alpha{alpha}" not in stem:
             continue
-        try:
-            seed_str = stem.split("_seed")[1].split("_alpha")[0]
-            seed = int(seed_str)
-        except (IndexError, ValueError):
+        seed = None
+        # old: {method}_seed{N}_alpha{A}
+        if "_seed" in stem and stem.index("_seed") < stem.index("alpha"):
+            try:
+                seed = int(stem.split("_seed")[1].split("_")[0])
+            except (IndexError, ValueError):
+                pass
+        # new: {method}_alpha{A}_seed{N}
+        if seed is None and "_seed" in stem:
+            try:
+                seed = int(stem.split("_seed")[1])
+            except (IndexError, ValueError):
+                pass
+        if seed is None:
             continue
         path = os.path.join(results_dir, fname)
         with open(path) as f:
