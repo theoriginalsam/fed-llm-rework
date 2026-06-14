@@ -55,7 +55,9 @@ def load_per_seed(results_dir: Path, method: str, alpha: float, seeds: list):
     return raw_aucs, ema_aucs
 
 
-def fmt(mean, std):
+def fmt(mean, std, n):
+    if n < 2:
+        return f"{mean:.1f} (n={n})"
     return f"{mean:.1f}±{std:.1f}"
 
 
@@ -70,20 +72,26 @@ def main():
     rows = []
 
     print(f"\nEMA-eval control: Yelp alpha={args.alpha}, seeds={args.seeds}")
-    print(f"{'Method':12s}  {'Raw AUC':>14s}  {'+ EMA AUC':>14s}  {'Δ':>6s}  {'p-value':>10s}")
-    print("-" * 65)
+    print(f"{'Method (n seeds)':20s}  {'Raw AUC':>16s}  {'+ EMA AUC':>16s}  {'Δ':>6s}  {'p-value':>18s}")
+    print("-" * 85)
 
     for method in METHODS:
         raw_aucs, ema_aucs = load_per_seed(results_dir, method, args.alpha, args.seeds)
         if not raw_aucs:
             continue
 
-        raw_mean, raw_std = np.mean(raw_aucs), np.std(raw_aucs, ddof=1)
-        if ema_aucs and len(ema_aucs) == len(raw_aucs):
-            ema_mean, ema_std = np.mean(ema_aucs), np.std(ema_aucs, ddof=1)
+        n = len(raw_aucs)
+        raw_mean = np.mean(raw_aucs)
+        raw_std  = np.std(raw_aucs, ddof=1) if n > 1 else float("nan")
+        if ema_aucs and len(ema_aucs) == n:
+            ema_mean = np.mean(ema_aucs)
+            ema_std  = np.std(ema_aucs, ddof=1) if n > 1 else float("nan")
             delta = ema_mean - raw_mean
-            t, p = stats.ttest_rel(ema_aucs, raw_aucs)
-            p_str = f"p={p:.4f}"
+            if n > 1:
+                _, p = stats.ttest_rel(ema_aucs, raw_aucs)
+                p_str = f"p={p:.4f}"
+            else:
+                p_str = f"n={n} (need ≥2)"
         else:
             ema_mean = ema_std = delta = None
             p_str = "—"
@@ -93,12 +101,13 @@ def main():
             "raw_mean": raw_mean, "raw_std": raw_std,
             "ema_mean": ema_mean, "ema_std": ema_std,
             "delta": delta, "p": p_str,
-            "n_seeds": len(raw_aucs),
+            "n_seeds": n,
         }
         rows.append(row)
-        ema_fmt = fmt(ema_mean, ema_std) if ema_mean is not None else "—"
+        ema_fmt   = fmt(ema_mean, ema_std, n) if ema_mean is not None else "—"
         delta_fmt = f"{delta:+.1f}" if delta is not None else "—"
-        print(f"{METHOD_LABELS[method]:12s}  {fmt(raw_mean, raw_std):>14s}  {ema_fmt:>14s}  {delta_fmt:>6s}  {p_str:>10s}")
+        label     = f"{METHOD_LABELS[method]} (n={n})"
+        print(f"{label:20s}  {fmt(raw_mean, raw_std, n):>16s}  {ema_fmt:>16s}  {delta_fmt:>6s}  {p_str:>18s}")
 
     # HetLoRA / HetLoRA-M rows from main-table (paired by construction — same seeds)
     print(f"{'HetLoRA':12s}  {HETLORA_RAW_AUC:>13.1f}  {'—':>14s}  {'—':>6s}  {'—':>10s}")
@@ -112,8 +121,8 @@ def main():
     print(r"\caption{EMA-eval control: applying bias-corrected EMA ($\beta=0.5$) post-hoc")
     print(r"to each baseline's server-side state on Yelp $\alpha=0.1$.")
     print(r"Raw = standard eval; +EMA = eval on smoothed model.")
-    n = rows[0]["n_seeds"] if rows else 5
-    print(rf"All methods: {n} seeds. \textbf{{Bold}} = best per column.}}")
+    seed_note = ", ".join(f"{r['method']}: {r['n_seeds']}" for r in rows) if rows else "—"
+    print(rf"Seeds per method: {seed_note}. \textbf{{Bold}} = best per column.}}")
     print(r"\label{tab:ema_control}")
     print(r"\small")
     print(r"\begin{tabular}{lcccc}")
@@ -121,7 +130,7 @@ def main():
     print(r"\textbf{Method} & \textbf{Raw AUC} & \textbf{+EMA AUC} & $\Delta$ & $p$-value \\")
     print(r"\midrule")
     for row in rows:
-        em = fmt(row["ema_mean"], row["ema_std"]) if row["ema_mean"] else "—"
+        em = fmt(row["ema_mean"], row["ema_std"], row["n_seeds"]) if row["ema_mean"] else "—"
         d = f'{row["delta"]:+.1f}' if row["delta"] else "—"
         print(f'{row["method"]:12s} & {fmt(row["raw_mean"], row["raw_std"])} & {em} & {d} & {row["p"]} \\\\')
     print(r"\midrule")
