@@ -34,7 +34,7 @@ def load_per_seed(results_dir: Path, method: str, alpha: float, seeds: list):
     raw_aucs, ema_aucs = [], []
     alpha_tag = str(alpha).replace(".", "")
     for seed in seeds:
-        fp = results_dir / f"{method}_alpha{alpha_tag}_seed{seed}.json"
+        fp = results_dir / f"{method}_seed{seed}_alpha{alpha_tag}.json"
         if not fp.exists():
             print(f"  WARNING: {fp} not found — skipping seed {seed}")
             continue
