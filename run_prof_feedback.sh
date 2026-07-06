@@ -52,8 +52,11 @@ echo ""
 
 # ─── write worker scripts ─────────────────────────────────────────────────────
 for GPU in 0 1; do
-    [ "$GPU" -eq 0 ] && GSEEDS="$GPU0_SEEDS" && GFILL="$GPU0_FILL" \
-                     || GSEEDS="$GPU1_SEEDS" && GFILL="$GPU1_FILL"
+    if [ "$GPU" -eq 0 ]; then
+        GSEEDS="$GPU0_SEEDS"; GFILL="$GPU0_FILL"
+    else
+        GSEEDS="$GPU1_SEEDS"; GFILL="$GPU1_FILL"
+    fi
 
     cat > "/tmp/prof_gpu${GPU}.sh" <<WORKER
 #!/usr/bin/env bash
