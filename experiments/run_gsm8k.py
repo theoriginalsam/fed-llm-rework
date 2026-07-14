@@ -48,6 +48,7 @@ def main():
     parser.add_argument("--spa-tau", type=float, default=0.01)
     parser.add_argument("--results-dir", type=str, default="results_v2")
     parser.add_argument("--hetlora-m-beta", type=float, default=0.5)
+    parser.add_argument("--num-rounds", type=int, default=None)
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "gsm8k")
@@ -78,7 +79,7 @@ def main():
             alpha=alpha,
             results_dir=results_dir,
             device=args.device,
-            num_rounds=NUM_ROUNDS,
+            num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
             hetlora_m_beta=args.hetlora_m_beta,
         )
