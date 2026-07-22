@@ -100,6 +100,7 @@ def run_federated(
     clients_per_round: int = CLIENTS_PER_ROUND,
     rank_distribution: Optional[Dict[str, int]] = None,
     ema_eval: bool = False,
+    save_adapters_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
 
     random.seed(seed)
@@ -198,6 +199,13 @@ def run_federated(
                     global_wagg, rank, method, spa_tau, device
                 )
 
+            adapter_prefix = None
+            if save_adapters_dir is not None:
+                adapter_prefix = os.path.join(
+                    save_adapters_dir,
+                    f"round{round_num:03d}_client{cid:03d}_r{rank}",
+                )
+
             weights, loss = train_client(
                 base_model=base_model,
                 tokenizer=tokenizer,
@@ -212,6 +220,7 @@ def run_federated(
                 device=device,
                 extract_method=extract_method,
                 pbar_desc=f"  R{round_num} C{client_idx+1}/{CLIENTS_PER_ROUND} r={rank}",
+                adapter_save_prefix=adapter_prefix,
             )
             round_losses.append(loss)
 

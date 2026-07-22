@@ -7,6 +7,7 @@ Each federated round, a client:
   3. Returns updated weights for aggregation.
 """
 
+import os
 import torch
 from peft import LoraConfig, get_peft_model, TaskType
 from typing import Dict, Optional, Tuple
@@ -99,6 +100,22 @@ def extract_lora_weights(model, method: str = "full_w") -> Dict[str, torch.Tenso
     return result
 
 
+def save_adapter_for_audit(
+    ab_weights: Dict[str, Dict[str, torch.Tensor]],
+    path_prefix: str,
+):
+    """
+    Save per-module (A, B) factors as one .pt file per LoRA module,
+    each loadable by fedgt.load_real_adapter (keys 'lora_A'/'lora_B').
+    Factors are kept in float32: the spectral auditor reads the *tail*
+    singular values, which fp16 rounding would bias.
+    """
+    os.makedirs(os.path.dirname(path_prefix), exist_ok=True)
+    for module_key, mats in ab_weights.items():
+        fname = f"{path_prefix}__{module_key.replace('.', '_')}.pt"
+        torch.save({"lora_A": mats["A"], "lora_B": mats["B"]}, fname)
+
+
 def train_client(
     base_model,
     tokenizer,
@@ -113,6 +130,7 @@ def train_client(
     device: str = "cuda",
     extract_method: str = "full_w",
     pbar_desc: str = "",
+    adapter_save_prefix: Optional[str] = None,
 ) -> Tuple[Dict, float]:
     """
     Full client training step. Returns (extracted_weights, avg_loss).
@@ -179,6 +197,11 @@ def train_client(
     pbar.close()
 
     weights = extract_lora_weights(model, method=extract_method)
+
+    if adapter_save_prefix is not None:
+        ab = weights if extract_method == "ab_pair" else extract_lora_weights(model, "ab_pair")
+        save_adapter_for_audit(ab, adapter_save_prefix)
+
     del model
     torch.cuda.empty_cache()
     # base_model stays on CPU; caller (fl_server) moves it back before evaluation.
