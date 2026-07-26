@@ -59,6 +59,12 @@ def main():
                         help="EMA beta for hetlora_m (default: 0.5)")
     parser.add_argument("--ema-eval", action="store_true",
                         help="EMA control: also evaluate EMA-smoothed model each round (homo_r8, hetero_pad, flexlora only)")
+    parser.add_argument("--save-adapters-dir", type=str, default=None,
+                        help="If set, save each selected client's per-round LoRA "
+                             "adapter here for the FedGT spectral auditor")
+    parser.add_argument("--clients-per-round", type=int, default=None,
+                        help="Override clients selected per round (default: from "
+                             "base_config). Raise it for a probe so all ranks are covered.")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "yelp")
@@ -105,6 +111,9 @@ def main():
             batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
             hetlora_m_beta=args.hetlora_m_beta,
             ema_eval=args.ema_eval,
+            save_adapters_dir=args.save_adapters_dir,
+            **({"clients_per_round": args.clients_per_round}
+               if args.clients_per_round is not None else {}),
         )
 
     print("\nAll Yelp experiments complete.")
