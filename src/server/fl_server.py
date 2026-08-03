@@ -148,7 +148,8 @@ def run_federated(
     # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
     global_wagg: Optional[Dict[str, torch.Tensor]] = None
     global_ba_hetlora: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
-    global_ba_hetlora_m: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
+    global_ba_hetlora_m_raw: Optional[Dict[str, Dict[str, torch.Tensor]]] = None  # → clients
+    global_ba_hetlora_m_ema: Optional[Dict[str, Dict[str, torch.Tensor]]] = None  # → eval only
 
     round_results = []
 
@@ -186,11 +187,11 @@ def run_federated(
                         global_ba_hetlora, rank, device
                     )
             elif method == "hetlora_m":
-                if global_ba_hetlora_m is None:
+                if global_ba_hetlora_m_raw is None:
                     client_global = None
                 else:
                     client_global = HetLoRAAggregator.distribute_to_client(
-                        global_ba_hetlora_m, rank, device
+                        global_ba_hetlora_m_raw, rank, device
                     )
             elif global_wagg is None:
                 client_global = None
@@ -247,8 +248,9 @@ def run_federated(
             global_ba_hetlora = aggregator.get_global_ba()
             global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora.items()}
         elif method == "hetlora_m":
-            global_ba_hetlora_m = aggregator.get_global_ba()
-            global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora_m.items()}
+            global_ba_hetlora_m_ema = aggregator.get_global_ba()   # EMA state → eval
+            global_ba_hetlora_m_raw = aggregator.get_raw_ba()       # raw aggregate → clients
+            global_wagg = {k: v["B"] @ v["A"] for k, v in global_ba_hetlora_m_ema.items()}
         else:
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
@@ -267,7 +269,7 @@ def run_federated(
             )
         elif method == "hetlora_m":
             eval_lora = HetLoRAAggregator.distribute_to_client(
-                global_ba_hetlora_m, eval_rank, device
+                global_ba_hetlora_m_ema, eval_rank, device
             )
         else:
             eval_lora = project_wagg_to_client(global_wagg, eval_rank, method, spa_tau, device)

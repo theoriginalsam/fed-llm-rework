@@ -1,34 +1,39 @@
 """
-HetLoRA-M: HetLoRA + EMA Momentum on (B, A) aggregation.
+HetLoRA-M: HetLoRA + evaluation-side EMA in (B, A) space.
 
 Extends HetLoRA (Cho et al., EMNLP 2024) with server-side EMA momentum
-applied directly to the aggregated (B̄, Ā) matrices at max_rank.
+that is applied ONLY to the evaluated (deployed) model. Clients always
+receive the raw Frobenius-weighted aggregate, not the EMA state.
 
 Algorithm each round:
   1. Compute Frobenius-weighted average (same as HetLoRA):
        B_raw = Σ_k p_k · pad(B_k),  A_raw = Σ_k p_k · pad(A_k)
        where p_k ∝ ||B_k A_k||_F
 
-  2. Apply EMA in (B, A) space:
+  2. Apply EMA in (B, A) space (server-side only, never sent to clients):
        B̄^(t) = β · B̄^(t-1) + (1−β) · B_raw^(t)
        Ā^(t) = β · Ā^(t-1) + (1−β) · A_raw^(t)
 
-  3. Bias-correct and distribute via truncation (same as HetLoRA):
-       B̄_bc = B̄^(t) / (1 − β^t)
-       Client k receives: B̄_bc[:, :r_k], Ā_bc[:r_k, :]
+  3. Client distribution uses the RAW aggregate (same as HetLoRA):
+       Client k receives: B_raw[:, :r_k], A_raw[:r_k, :]
+
+  4. Evaluation uses the bias-corrected EMA state:
+       B̄_bc = B̄^(t) / (1 − β^t),  Ā_bc likewise
 
 Why this avoids SPA-M's feedback loop:
-  SPA-M applies momentum to ΔW, which is then fed back into client
-  initialization. Under α=0.1, clients train *relative* to the momentum
-  state → ΔW uploads are deviations, not absolute signals → EMA
-  accumulates noise over near-orthogonal rounds.
+  SPA-M distributes the momentum state to clients, who train relative
+  to it. Their uploads are deviations from momentum → EMA accumulates
+  deviation noise that grows as training converges.
 
-  HetLoRA-M applies momentum to the aggregated (B̄, Ā) *after* the
-  Frobenius-weighted sum. Clients initialize from truncated (B̄, Ā) the
-  same way as vanilla HetLoRA — the momentum smooths the global matrices
-  across rounds without introducing a relative-deviation feedback loop.
-  Low-rank clients still see their natural subspace positions (slots 0:r_k)
-  smoothed over time, not reorganized by SVD energy ordering.
+  HetLoRA-M distributes only the raw aggregate. Client training dynamics
+  are identical to HetLoRA — the momentum state never contaminates
+  client initialization. The EMA smooths a convergent sequence of raw
+  aggregates at the server and is used only at evaluation time.
+
+API:
+  get_global_ba() → bias-corrected EMA state  (for evaluation)
+  get_raw_ba()    → last raw aggregate         (for client distribution)
+  Call get_global_ba() first each round; get_raw_ba() returns the cached raw.
 """
 
 import torch
@@ -52,9 +57,12 @@ class HetLoRAMomentumAggregator(HetLoRAAggregator):
 
     def get_global_ba(self) -> Dict[str, Dict[str, torch.Tensor]]:
         """
-        Compute Frobenius-weighted raw (B, A), apply EMA, return bias-corrected result.
+        Compute raw Frobenius-weighted (B, A), update EMA, return bias-corrected EMA.
+        Raw aggregate is cached in self._last_raw_ba for get_raw_ba().
+        Use get_raw_ba() for client distribution; this return value for evaluation.
         """
         raw_ba = super().get_global_ba()
+        self._last_raw_ba = raw_ba   # cache for get_raw_ba()
         if not raw_ba:
             return {}
 
@@ -83,3 +91,11 @@ class HetLoRAMomentumAggregator(HetLoRAAggregator):
             }
             for k in self._b_ema
         }
+
+    def get_raw_ba(self) -> Dict[str, Dict[str, torch.Tensor]]:
+        """
+        Return the raw Frobenius-weighted aggregate from the current round.
+        Must be called after get_global_ba() — returns the cached raw (no EMA).
+        This is what clients receive so their training trajectory is identical to HetLoRA.
+        """
+        return getattr(self, "_last_raw_ba", {})
