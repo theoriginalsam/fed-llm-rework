@@ -48,6 +48,14 @@ def main():
     parser.add_argument("--spa-tau", type=float, default=0.01)
     parser.add_argument("--results-dir", type=str, default="results_v2")
     parser.add_argument("--hetlora-m-beta", type=float, default=0.5)
+    parser.add_argument("--save-adapters-dir", type=str, default=None,
+                        help="If set, save each selected client's per-round LoRA "
+                             "adapter here for the FedGT spectral auditor")
+    parser.add_argument("--clients-per-round", type=int, default=None,
+                        help="Override clients selected per round (default: from "
+                             "base_config)")
+    parser.add_argument("--num-rounds", type=int, default=None,
+                        help="Override number of rounds")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "alpaca")
@@ -78,9 +86,12 @@ def main():
             alpha=alpha,
             results_dir=results_dir,
             device=args.device,
-            num_rounds=NUM_ROUNDS,
+            num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
             hetlora_m_beta=args.hetlora_m_beta,
+            save_adapters_dir=args.save_adapters_dir,
+            **({"clients_per_round": args.clients_per_round}
+               if args.clients_per_round is not None else {}),
         )
 
     print("Alpaca experiments complete.")
