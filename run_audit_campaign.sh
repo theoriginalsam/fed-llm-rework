@@ -30,6 +30,12 @@ DRY=0
 # batch to stay inside VRAM. Everything else uses the config default.
 batch_for () { [ "$1" = "gsm8k" ] && echo "--batch-size 2" || echo ""; }
 
+# A complete run writes one .pt per LoRA module, per selected client, per round.
+# MODULES is 2 target modules (q_proj, v_proj) times the model's layer count.
+MODULES="${MODULES:-56}"
+EXPECTED=$(( ROUNDS * CLIENTS_PER_ROUND * MODULES ))
+NEED_OK=$(( EXPECTED * 95 / 100 ))   # small slack for clients with empty shards
+
 total=0; done_already=0; ok=0; failed=0
 started=$(date +%s)
 
@@ -39,6 +45,7 @@ echo " datasets : $DATASETS"
 echo " methods  : $METHODS"
 echo " seeds    : $SEEDS"
 echo " rounds   : $ROUNDS, clients per round: $CLIENTS_PER_ROUND"
+echo " complete run = $EXPECTED adapter files (resume threshold $NEED_OK)"
 echo " HF_HOME  : $HF_HOME"
 echo " started  : $(date)"
 echo "=================================================================="
@@ -53,9 +60,19 @@ for ds in $DATASETS; do
       if [ ! -f "$RUNNER" ]; then
         echo "[skip] no runner for $ds ($RUNNER missing)"; failed=$((failed+1)); continue
       fi
-      if [ -d "$OUT/adapters" ] && [ "$(ls -A "$OUT/adapters" 2>/dev/null | wc -l)" -gt 0 ]; then
-        echo "[done] $OUT already has adapters, skipping"
+      # Resume check. Count files rather than testing for non-empty, otherwise a
+      # run killed part way through looks finished and gets silently skipped,
+      # leaving a short run in the results. One file per LoRA module per client
+      # per round, so a complete run has ROUNDS * CLIENTS_PER_ROUND * MODULES.
+      have=$(ls -A "$OUT/adapters" 2>/dev/null | wc -l)
+      if [ "$have" -ge "$NEED_OK" ]; then
+        echo "[done] $OUT has $have adapter files, skipping"
         done_already=$((done_already+1)); continue
+      elif [ "$have" -gt 0 ]; then
+        echo "[part] $OUT has only $have of $EXPECTED expected files, redoing it"
+        # deletion is deliberately skipped under --dry-run, which must never
+        # touch anything on disk
+        [ "$DRY" = "1" ] || rm -rf "$OUT"
       fi
 
       CMD="python $RUNNER --method $m --alpha $ALPHA --seed $s \
