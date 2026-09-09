@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, METHODS
+from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, METHODS, BATCH_SIZE
 from config.dataset_configs import GSM8K_CONFIG
 from src.data.gsm8k import load_gsm8k
 from src.server.fl_server import run_federated
@@ -55,6 +55,8 @@ def main():
     parser.add_argument("--clients-per-round", type=int, default=None,
                         help="Override clients selected per round (default: from "
                              "base_config)")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Override batch size (default: from base_config)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "gsm8k")
@@ -87,6 +89,7 @@ def main():
             device=args.device,
             num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
+            batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
             hetlora_m_beta=args.hetlora_m_beta,
             save_adapters_dir=args.save_adapters_dir,
             **({"clients_per_round": args.clients_per_round}
