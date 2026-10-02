@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, METHODS
+from config.base_config import MODEL_NAME, NUM_CLIENTS, NUM_ROUNDS, METHODS, BATCH_SIZE
 from config.dataset_configs import ALPACA_CONFIG
 from src.data.alpaca import load_alpaca
 from src.server.fl_server import run_federated
@@ -48,6 +48,16 @@ def main():
     parser.add_argument("--spa-tau", type=float, default=0.01)
     parser.add_argument("--results-dir", type=str, default="results_v2")
     parser.add_argument("--hetlora-m-beta", type=float, default=0.5)
+    parser.add_argument("--save-adapters-dir", type=str, default=None,
+                        help="If set, save each selected client's per-round LoRA "
+                             "adapter here for the FedGT spectral auditor")
+    parser.add_argument("--clients-per-round", type=int, default=None,
+                        help="Override clients selected per round (default: from "
+                             "base_config)")
+    parser.add_argument("--num-rounds", type=int, default=None,
+                        help="Override number of rounds")
+    parser.add_argument("--batch-size", type=int, default=None,
+                        help="Override batch size (default: from base_config)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "alpaca")
@@ -78,9 +88,13 @@ def main():
             alpha=alpha,
             results_dir=results_dir,
             device=args.device,
-            num_rounds=NUM_ROUNDS,
+            num_rounds=args.num_rounds if args.num_rounds is not None else NUM_ROUNDS,
             spa_tau=args.spa_tau,
+            batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
             hetlora_m_beta=args.hetlora_m_beta,
+            save_adapters_dir=args.save_adapters_dir,
+            **({"clients_per_round": args.clients_per_round}
+               if args.clients_per_round is not None else {}),
         )
 
     print("Alpaca experiments complete.")
