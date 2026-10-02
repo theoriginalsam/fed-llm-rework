@@ -1,0 +1,147 @@
+{
+  "method": "hetlora_m",
+  "seed": 42,
+  "alpha": 0.5,
+  "rounds": [
+    {
+      "round": 1,
+      "avg_loss": 2.127227800697088,
+      "round_time_s": 395.523743391037,
+      "exact_match": 0.48,
+      "perplexity": 17.697085974011205
+    },
+    {
+      "round": 2,
+      "avg_loss": 0.42330774693191053,
+      "round_time_s": 394.0913197994232,
+      "exact_match": 0.56,
+      "perplexity": 6.635341271494918
+    },
+    {
+      "round": 3,
+      "avg_loss": 0.08175758777558803,
+      "round_time_s": 368.9351553916931,
+      "exact_match": 0.7,
+      "perplexity": 5.602729023775342
+    },
+    {
+      "round": 4,
+      "avg_loss": 0.07120044748112558,
+      "round_time_s": 361.6972177028656,
+      "exact_match": 0.79,
+      "perplexity": 5.533146501149204
+    },
+    {
+      "round": 5,
+      "avg_loss": 0.06411646287888288,
+      "round_time_s": 364.48595690727234,
+      "exact_match": 0.78,
+      "perplexity": 5.651168369247324
+    },
+    {
+      "round": 6,
+      "avg_loss": 0.05868809800595045,
+      "round_time_s": 360.0730230808258,
+      "exact_match": 0.8,
+      "perplexity": 5.68472391732446
+    },
+    {
+      "round": 7,
+      "avg_loss": 0.057298720281571146,
+      "round_time_s": 359.2909686565399,
+      "exact_match": 0.8,
+      "perplexity": 5.660084273736192
+    },
+    {
+      "round": 8,
+      "avg_loss": 0.054156384512782096,
+      "round_time_s": 360.11544013023376,
+      "exact_match": 0.78,
+      "perplexity": 5.622525791924368
+    },
+    {
+      "round": 9,
+      "avg_loss": 0.05523069547116757,
+      "round_time_s": 359.2736961841583,
+      "exact_match": 0.81,
+      "perplexity": 5.578305713420802
+    },
+    {
+      "round": 10,
+      "avg_loss": 0.053889345940202484,
+      "round_time_s": 359.2124333381653,
+      "exact_match": 0.79,
+      "perplexity": 5.644321590013095
+    },
+    {
+      "round": 11,
+      "avg_loss": 0.052716320224106314,
+      "round_time_s": 356.1737186908722,
+      "exact_match": 0.8,
+      "perplexity": 5.642246964168577
+    },
+    {
+      "round": 12,
+      "avg_loss": 0.05206940994411707,
+      "round_time_s": 356.8850796222687,
+      "exact_match": 0.78,
+      "perplexity": 5.68140182501956
+    },
+    {
+      "round": 13,
+      "avg_loss": 0.05334664742648602,
+      "round_time_s": 359.15783190727234,
+      "exact_match": 0.78,
+      "perplexity": 5.705296199526844
+    },
+    {
+      "round": 14,
+      "avg_loss": 0.050718025427311665,
+      "round_time_s": 360.8625545501709,
+      "exact_match": 0.79,
+      "perplexity": 5.645822380901763
+    },
+    {
+      "round": 15,
+      "avg_loss": 0.04871519277244806,
+      "round_time_s": 356.44701766967773,
+      "exact_match": 0.81,
+      "perplexity": 5.638687054459307
+    },
+    {
+      "round": 16,
+      "avg_loss": 0.04875678827241063,
+      "round_time_s": 361.92352080345154,
+      "exact_match": 0.77,
+      "perplexity": 5.709105118196835
+    },
+    {
+      "round": 17,
+      "avg_loss": 0.04978826932609082,
+      "round_time_s": 364.8298363685608,
+      "exact_match": 0.73,
+      "perplexity": 5.729686556107761
+    },
+    {
+      "round": 18,
+      "avg_loss": 0.04818674072250724,
+      "round_time_s": 362.2909622192383,
+      "exact_match": 0.78,
+      "perplexity": 5.638147235243881
+    },
+    {
+      "round": 19,
+      "avg_loss": 0.04672254130989313,
+      "round_time_s": 361.11948323249817,
+      "exact_match": 0.78,
+      "perplexity": 5.715056993366287
+    },
+    {
+      "round": 20,
+      "avg_loss": 0.04763629762455821,
+      "round_time_s": 362.78215193748474,
+      "exact_match": 0.74,
+      "perplexity": 5.703014350636374
+    }
+  ]
+}

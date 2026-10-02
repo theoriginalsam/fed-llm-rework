@@ -1,0 +1,187 @@
+{
+  "method": "flexlora",
+  "seed": 42,
+  "alpha": 0.5,
+  "rounds": [
+    {
+      "round": 1,
+      "avg_loss": 2.114142991900444,
+      "round_time_s": 449.70671582221985,
+      "rouge_l": 0.36562918260962785,
+      "bleu": 16.883651698539644,
+      "hallucination_rate": 0.005,
+      "perplexity": 2.9369719843046385
+    },
+    {
+      "round": 2,
+      "avg_loss": 0.21791609857976435,
+      "round_time_s": 790.7911140918732,
+      "rouge_l": 0.38550030953072706,
+      "bleu": 19.44103522912427,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.247825116931549
+    },
+    {
+      "round": 3,
+      "avg_loss": 0.21320979849994184,
+      "round_time_s": 700.472836971283,
+      "rouge_l": 0.38867810687576154,
+      "bleu": 19.39306020896796,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.2275268533878108
+    },
+    {
+      "round": 4,
+      "avg_loss": 0.21713176466524597,
+      "round_time_s": 706.1284692287445,
+      "rouge_l": 0.39482348266827544,
+      "bleu": 20.03718244823849,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.2209430261464047
+    },
+    {
+      "round": 5,
+      "avg_loss": 0.2065037856847048,
+      "round_time_s": 652.3491308689117,
+      "rouge_l": 0.3903239309264748,
+      "bleu": 19.52039060428924,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.213442083568718
+    },
+    {
+      "round": 6,
+      "avg_loss": 0.21421156238019465,
+      "round_time_s": 673.3198549747467,
+      "rouge_l": 0.39190240008867155,
+      "bleu": 19.59423770560937,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.209460590204315
+    },
+    {
+      "round": 7,
+      "avg_loss": 0.207083954423666,
+      "round_time_s": 701.1586608886719,
+      "rouge_l": 0.39439845579880284,
+      "bleu": 19.776718418360733,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.205500268454217
+    },
+    {
+      "round": 8,
+      "avg_loss": 0.20586865396797654,
+      "round_time_s": 673.8701369762421,
+      "rouge_l": 0.3895961474533579,
+      "bleu": 19.702565768538122,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.2022528925553
+    },
+    {
+      "round": 9,
+      "avg_loss": 0.2075871220976114,
+      "round_time_s": 688.8348321914673,
+      "rouge_l": 0.38940203674335744,
+      "bleu": 19.62013827762264,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1997045092446337
+    },
+    {
+      "round": 10,
+      "avg_loss": 0.20839338785409928,
+      "round_time_s": 677.8687808513641,
+      "rouge_l": 0.39238703065684816,
+      "bleu": 19.77089233511744,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1988366034490365
+    },
+    {
+      "round": 11,
+      "avg_loss": 0.20703883714973928,
+      "round_time_s": 669.9031274318695,
+      "rouge_l": 0.39342895745370865,
+      "bleu": 20.061951650136795,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.196292053370411
+    },
+    {
+      "round": 12,
+      "avg_loss": 0.20675337715446954,
+      "round_time_s": 687.1511316299438,
+      "rouge_l": 0.38979685689662247,
+      "bleu": 19.864188764996303,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.196128434468026
+    },
+    {
+      "round": 13,
+      "avg_loss": 0.21115325050055983,
+      "round_time_s": 670.3232774734497,
+      "rouge_l": 0.3880232983869108,
+      "bleu": 19.86900006083192,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1946324149038676
+    },
+    {
+      "round": 14,
+      "avg_loss": 0.21451283034682275,
+      "round_time_s": 671.9099802970886,
+      "rouge_l": 0.39342125622104746,
+      "bleu": 20.031292296661817,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1918519975770745
+    },
+    {
+      "round": 15,
+      "avg_loss": 0.2080710203051567,
+      "round_time_s": 680.3243210315704,
+      "rouge_l": 0.3977364049886716,
+      "bleu": 20.594086439257907,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.191669767625428
+    },
+    {
+      "round": 16,
+      "avg_loss": 0.2086224174499512,
+      "round_time_s": 679.0939247608185,
+      "rouge_l": 0.39880881549069813,
+      "bleu": 20.749356040315092,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.188948797551304
+    },
+    {
+      "round": 17,
+      "avg_loss": 0.20541427387297154,
+      "round_time_s": 653.1975576877594,
+      "rouge_l": 0.40035340593310054,
+      "bleu": 20.710740728449665,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1910422548269888
+    },
+    {
+      "round": 18,
+      "avg_loss": 0.2141934905797243,
+      "round_time_s": 676.9811136722565,
+      "rouge_l": 0.39113727399552944,
+      "bleu": 19.87594801564947,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1898493239524233
+    },
+    {
+      "round": 19,
+      "avg_loss": 0.20439846304059026,
+      "round_time_s": 695.3019070625305,
+      "rouge_l": 0.3975929523472722,
+      "bleu": 20.515792277410064,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.187039282738636
+    },
+    {
+      "round": 20,
+      "avg_loss": 0.21013811767101287,
+      "round_time_s": 679.4614102840424,
+      "rouge_l": 0.3979662000922412,
+      "bleu": 20.681004509656237,
+      "hallucination_rate": 0.0,
+      "perplexity": 2.1871449627327624
+    }
+  ]
+}

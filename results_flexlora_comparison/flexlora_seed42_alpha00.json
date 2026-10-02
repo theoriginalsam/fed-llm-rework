@@ -1,0 +1,147 @@
+{
+  "method": "flexlora",
+  "seed": 42,
+  "alpha": 0.0,
+  "rounds": [
+    {
+      "round": 1,
+      "avg_loss": 2.422527585789562,
+      "round_time_s": 1188.7188882827759,
+      "rouge_l_unseen": 0.22114214869999144,
+      "rouge_l_unseen_std": 0.07688885758521281
+    },
+    {
+      "round": 2,
+      "avg_loss": 0.7613370792716742,
+      "round_time_s": 1502.1460735797882,
+      "rouge_l_unseen": 0.23266033184267032,
+      "rouge_l_unseen_std": 0.09912275470564978
+    },
+    {
+      "round": 3,
+      "avg_loss": 0.5910992963239551,
+      "round_time_s": 1419.734263420105,
+      "rouge_l_unseen": 0.23210146699064596,
+      "rouge_l_unseen_std": 0.09545789301018281
+    },
+    {
+      "round": 4,
+      "avg_loss": 0.7760627194643022,
+      "round_time_s": 1474.0501689910889,
+      "rouge_l_unseen": 0.2383686997915949,
+      "rouge_l_unseen_std": 0.10356105870768044
+    },
+    {
+      "round": 5,
+      "avg_loss": 0.6400760487243533,
+      "round_time_s": 1481.4387242794037,
+      "rouge_l_unseen": 0.24649566959052965,
+      "rouge_l_unseen_std": 0.1194142108240661
+    },
+    {
+      "round": 6,
+      "avg_loss": 0.7737280547246337,
+      "round_time_s": 1447.6762464046478,
+      "rouge_l_unseen": 0.23948793628773618,
+      "rouge_l_unseen_std": 0.10848798579083932
+    },
+    {
+      "round": 7,
+      "avg_loss": 0.7816961072832346,
+      "round_time_s": 1426.348272562027,
+      "rouge_l_unseen": 0.2518451612433695,
+      "rouge_l_unseen_std": 0.13012206116971217
+    },
+    {
+      "round": 8,
+      "avg_loss": 0.6600770058333874,
+      "round_time_s": 1485.4971289634705,
+      "rouge_l_unseen": 0.24932830097575195,
+      "rouge_l_unseen_std": 0.119674994563633
+    },
+    {
+      "round": 9,
+      "avg_loss": 0.6575031753033399,
+      "round_time_s": 1466.6124126911163,
+      "rouge_l_unseen": 0.24760061404136016,
+      "rouge_l_unseen_std": 0.1173593984559901
+    },
+    {
+      "round": 10,
+      "avg_loss": 0.8231812227666377,
+      "round_time_s": 1446.6524603366852,
+      "rouge_l_unseen": 0.23836453476168207,
+      "rouge_l_unseen_std": 0.10270867492138092
+    },
+    {
+      "round": 11,
+      "avg_loss": 0.817870199136436,
+      "round_time_s": 1454.313845872879,
+      "rouge_l_unseen": 0.24275439202161553,
+      "rouge_l_unseen_std": 0.1028062884771938
+    },
+    {
+      "round": 12,
+      "avg_loss": 0.7535510442666709,
+      "round_time_s": 1463.6857151985168,
+      "rouge_l_unseen": 0.2525626005527325,
+      "rouge_l_unseen_std": 0.12323143463176761
+    },
+    {
+      "round": 13,
+      "avg_loss": 0.8054674874469638,
+      "round_time_s": 1452.3336205482483,
+      "rouge_l_unseen": 0.2505134642008451,
+      "rouge_l_unseen_std": 0.12507768910917713
+    },
+    {
+      "round": 14,
+      "avg_loss": 0.8335160288959742,
+      "round_time_s": 1444.299782037735,
+      "rouge_l_unseen": 0.23976964234448034,
+      "rouge_l_unseen_std": 0.10655158620682195
+    },
+    {
+      "round": 15,
+      "avg_loss": 0.6347629380077124,
+      "round_time_s": 1465.5156457424164,
+      "rouge_l_unseen": 0.2594887866600666,
+      "rouge_l_unseen_std": 0.13764746297671357
+    },
+    {
+      "round": 16,
+      "avg_loss": 0.8736740927770734,
+      "round_time_s": 1484.4000339508057,
+      "rouge_l_unseen": 0.24867113527637583,
+      "rouge_l_unseen_std": 0.12497174679504895
+    },
+    {
+      "round": 17,
+      "avg_loss": 0.6596471333615482,
+      "round_time_s": 1455.9342098236084,
+      "rouge_l_unseen": 0.25568208700800266,
+      "rouge_l_unseen_std": 0.12874610917893634
+    },
+    {
+      "round": 18,
+      "avg_loss": 0.5302484409771859,
+      "round_time_s": 1451.5761423110962,
+      "rouge_l_unseen": 0.25537145763740493,
+      "rouge_l_unseen_std": 0.12581542510015478
+    },
+    {
+      "round": 19,
+      "avg_loss": 0.7097636861689389,
+      "round_time_s": 1484.104172706604,
+      "rouge_l_unseen": 0.25427090319383244,
+      "rouge_l_unseen_std": 0.1251159584255313
+    },
+    {
+      "round": 20,
+      "avg_loss": 0.7508591265529393,
+      "round_time_s": 1418.8151919841766,
+      "rouge_l_unseen": 0.2619743131796942,
+      "rouge_l_unseen_std": 0.13205549009875972
+    }
+  ]
+}

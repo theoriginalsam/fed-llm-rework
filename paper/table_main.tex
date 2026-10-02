@@ -1,0 +1,20 @@
+\begin{table}[t]
+  \centering
+  \caption{Main results: AUC (mean over all 20 rounds) $\pm$ std across seeds.
+    \textbf{Bold} = best per column. AUC penalises slow convergence and late-round instability.}
+  \label{tab:main}
+  \begin{tabular}{lcccccc}
+    \toprule
+      & \multicolumn{2}{c}{Yelp Review} & \multicolumn{2}{c}{GSM8K} & \multicolumn{2}{c}{Alpaca} \\
+    \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7} \\
+    Method & $\alpha$=0.5 & $\alpha$=0.1 & $\alpha$=0.5 & $\alpha$=0.1 & $\alpha$=0.5 & $\alpha$=0.1 \\
+    \midrule
+    Homo r=8 & 46.3\tiny{$\pm$1.0} & 39.3\tiny{$\pm$1.8} & 76.2\tiny{$\pm$0.7} & 76.5\tiny{$\pm$0.2} & 0.414\tiny{$\pm$0.015} & 0.412\tiny{$\pm$0.015} \\
+    Hetero-Pad & 44.6\tiny{$\pm$4.5} & 40.5\tiny{$\pm$1.6} & 76.1\tiny{$\pm$1.1} & 76.5\tiny{$\pm$0.3} & 0.403\tiny{$\pm$0.014} & 0.410\tiny{$\pm$0.013} \\
+    FlexLoRA & 46.2\tiny{$\pm$1.6} & 39.4\tiny{$\pm$2.0} & 76.9\tiny{$\pm$0.9} & 76.7\tiny{$\pm$1.1} & \textbf{0.414\tiny{$\pm$0.016}} & \textbf{0.414\tiny{$\pm$0.015}} \\
+    \textit{HetLoRA} & 47.2\tiny{$\pm$3.3} & 41.5\tiny{$\pm$2.5} & 75.4\tiny{$\pm$0.5} & 74.9\tiny{$\pm$0.6} & 0.402\tiny{$\pm$0.021} & 0.403\tiny{$\pm$0.018} \\
+    \textbf{HetLoRA-M (ours)} & \textbf{47.5\tiny{$\pm$2.6}} & \textbf{44.6\tiny{$\pm$2.5}} & 75.6\tiny{$\pm$0.4} & 75.7\tiny{$\pm$1.0} & 0.400\tiny{$\pm$0.016} & 0.400\tiny{$\pm$0.017} \\
+    SPA-M & 47.0\tiny{$\pm$2.0} & 40.0\tiny{$\pm$2.1} & \textbf{77.0\tiny{$\pm$0.5}} & \textbf{77.0\tiny{$\pm$0.7}} & 0.413\tiny{$\pm$0.014} & 0.413\tiny{$\pm$0.014} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
