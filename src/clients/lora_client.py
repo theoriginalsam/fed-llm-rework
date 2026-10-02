@@ -13,6 +13,8 @@ from peft import LoraConfig, get_peft_model, TaskType
 from typing import Dict, Optional, Tuple
 import copy
 
+from config.base_config import COPY_ON_GPU
+
 
 def make_lora_model(base_model, rank: int, target_modules, lora_alpha_multiplier: int = 2):
     """Wrap a base model with a fresh LoRA adapter."""
@@ -137,11 +139,15 @@ def train_client(
     """
     from tqdm import tqdm
 
-    # Deepcopy through CPU: avoids doubling GPU memory (14GB × 2 = OOM on 24GB cards).
-    # base_model stays on CPU until after training copy is deleted.
-    base_model.to("cpu")
-    model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
-    model = model.to(device)
+    if COPY_ON_GPU:
+        base_model.to(device)
+        model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
+    else:
+        # Deepcopy through CPU: avoids doubling GPU memory (14GB × 2 = OOM on 24GB cards).
+        # base_model stays on CPU until after training copy is deleted.
+        base_model.to("cpu")
+        model = make_lora_model(copy.deepcopy(base_model), rank, target_modules)
+        model = model.to(device)
     # Gradient checkpointing cuts activation memory ~50% at ~30% speed cost.
     # enable_input_require_grads() is required for PEFT + grad checkpointing:
     # it hooks the embedding output so autograd can flow through frozen base layers.

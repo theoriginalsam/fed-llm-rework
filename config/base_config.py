@@ -1,4 +1,5 @@
 """Central hyperparameter config. All experiments import from here."""
+import os
 from typing import Dict
 
 MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
@@ -22,6 +23,10 @@ CLIENTS_PER_ROUND = 5    # same as original for fair comparison
 LR = 2e-4
 BATCH_SIZE = 4            # effective batch = 16 with grad_accum
 GRAD_ACCUM_STEPS = 4
+
+# Copy the base model on the GPU instead of through CPU RAM for each client/eval model.
+# Needs ~2x model VRAM (fine on 96GB cards); avoids ~30GB CPU RAM peaks per process.
+COPY_ON_GPU = os.environ.get("FEDLLM_COPY_ON_GPU", "0") == "1"
 STEPS_PER_ROUND = 100     # same as original; more rounds compensate
 NUM_ROUNDS = 20           # 2× original for better convergence evidence
 

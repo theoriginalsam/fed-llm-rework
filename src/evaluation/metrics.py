@@ -13,16 +13,20 @@ from typing import Dict, List, Optional, Any
 from sklearn.metrics import f1_score, accuracy_score
 from peft import LoraConfig, get_peft_model, TaskType
 from src.clients.lora_client import make_lora_model, inject_lora_weights
-from config.base_config import TARGET_MODULES
+from config.base_config import TARGET_MODULES, COPY_ON_GPU
 import copy
 
 
 def _load_eval_model(base_model, global_lora_weights, rank, device):
-    # Deepcopy through CPU: base_model stays on CPU until eval model is deleted
-    # (see evaluate_model). Having both on GPU simultaneously = OOM on 24GB.
-    base_model.to("cpu")
-    model = make_lora_model(copy.deepcopy(base_model), rank, TARGET_MODULES)
-    model = model.to(device)
+    if COPY_ON_GPU:
+        base_model.to(device)
+        model = make_lora_model(copy.deepcopy(base_model), rank, TARGET_MODULES)
+    else:
+        # Deepcopy through CPU: base_model stays on CPU until eval model is deleted
+        # (see evaluate_model). Having both on GPU simultaneously = OOM on 24GB.
+        base_model.to("cpu")
+        model = make_lora_model(copy.deepcopy(base_model), rank, TARGET_MODULES)
+        model = model.to(device)
     if global_lora_weights:
         inject_lora_weights(model, global_lora_weights, device)
     model.eval()

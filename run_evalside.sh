@@ -43,6 +43,7 @@ for gi in "${!GPU_LIST[@]}"; do
     {
         echo "#!/usr/bin/env bash"
         echo "export CUDA_VISIBLE_DEVICES=${GPU}"
+        echo "export FEDLLM_COPY_ON_GPU=1"
         echo "cd $(pwd)"
         for ji in "${!JOBS[@]}"; do
             (( ji % NGPU == gi )) || continue
@@ -55,7 +56,8 @@ else
   echo "[gpu${GPU}][\$(date '+%m-%d %H:%M')] START ${DS} alpha=${ALPHA} seed=${SEED} rounds=${ROUNDS}"
   python experiments/run_${DS}.py --method hetlora --alpha ${ALPHA} --seed ${SEED} \\
     --num-rounds ${ROUNDS} --ema-eval ${EXTRA} --device cuda:0 --results-dir ${RESULTS_DIR}
-  echo "[gpu${GPU}][\$(date '+%m-%d %H:%M')] END   ${DS} alpha=${ALPHA} seed=${SEED} exit=\$?"
+  rc=\$?
+  echo "[gpu${GPU}][\$(date '+%m-%d %H:%M')] END   ${DS} alpha=${ALPHA} seed=${SEED} exit=\$rc"
 fi
 JOB
         done
