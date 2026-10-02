@@ -100,6 +100,7 @@ def run_federated(
     clients_per_round: int = CLIENTS_PER_ROUND,
     rank_distribution: Optional[Dict[str, int]] = None,
     ema_eval: bool = False,
+    ema_betas: Optional[List[float]] = None,
     save_adapters_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
 
@@ -141,8 +142,15 @@ def run_federated(
     logger = ExperimentLogger(method, seed, alpha, results_dir)
     logger.log(f"Starting {method} | seed={seed} | alpha={alpha} | tau={spa_tau}")
 
-    _EMA_CONTROL_METHODS = {"homo_r8", "hetero_pad", "flexlora"}
-    ema_hook = EMAEvalHook(beta=0.5, space="deltaw") if (ema_eval and method in _EMA_CONTROL_METHODS) else None
+    # Eval-side EMA: smoothed state is evaluated only; clients keep receiving the raw
+    # aggregate. hetlora + ema_eval gives HetLoRA (raw) and FedMoLoRA (EMA) in one run.
+    _EMA_SPACE = {"homo_r8": "deltaw", "hetero_pad": "deltaw", "flexlora": "deltaw", "hetlora": "ba"}
+    ema_hooks: Dict[float, EMAEvalHook] = {}
+    if ema_eval:
+        if method not in _EMA_SPACE:
+            raise ValueError(f"--ema-eval is not supported for method {method}")
+        for beta in sorted(set(ema_betas or []) | {0.5}):
+            ema_hooks[beta] = EMAEvalHook(beta=beta, space=_EMA_SPACE[method])
 
     # Global state: W_agg per layer {layer_key: tensor(d_out, d_in)}
     # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
@@ -284,26 +292,54 @@ def run_federated(
             device=device,
         )
 
-        ema_metrics = {}
-        if ema_hook is not None:
-            smoothed_wagg = ema_hook.update(global_wagg)
-            ema_eval_lora = project_wagg_to_client(smoothed_wagg, eval_rank, method, spa_tau, device)
-            ema_metrics = evaluate_model(
-                base_model=base_model,
-                tokenizer=tokenizer,
-                global_lora_weights=ema_eval_lora,
-                rank=eval_rank,
-                test_dataset=test_dataset,
-                dataset_config=dataset_config,
-                device=device,
+        ema_metrics_by_beta: Dict[float, Dict[str, float]] = {}
+        if ema_hooks:
+            # Building each extra eval model draws LoRA init weights from the RNG; restore
+            # it afterwards so client sampling and init match a run without --ema-eval.
+            rng_state = (
+                random.getstate(),
+                np.random.get_state(),
+                torch.get_rng_state(),
+                torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             )
+            for beta, hook in ema_hooks.items():
+                if method == "hetlora":
+                    smoothed_ba = hook.update(global_ba_hetlora)
+                    ema_eval_lora = HetLoRAAggregator.distribute_to_client(
+                        smoothed_ba, eval_rank, device
+                    )
+                else:
+                    smoothed_wagg = hook.update(global_wagg)
+                    ema_eval_lora = project_wagg_to_client(
+                        smoothed_wagg, eval_rank, method, spa_tau, device
+                    )
+                ema_metrics_by_beta[beta] = evaluate_model(
+                    base_model=base_model,
+                    tokenizer=tokenizer,
+                    global_lora_weights=ema_eval_lora,
+                    rank=eval_rank,
+                    test_dataset=test_dataset,
+                    dataset_config=dataset_config,
+                    device=device,
+                )
+            random.setstate(rng_state[0])
+            np.random.set_state(rng_state[1])
+            torch.set_rng_state(rng_state[2])
+            if rng_state[3] is not None:
+                torch.cuda.set_rng_state_all(rng_state[3])
 
         round_time = time.time() - round_start
         record = {"round": round_num, "avg_loss": float(np.mean(round_losses)),
                   "round_time_s": round_time, **metrics}
-        if ema_hook is not None:
-            record["acc_raw_eval"] = metrics.get("accuracy")
-            record["acc_ema_eval"] = ema_metrics.get("accuracy")
+        if ema_hooks:
+            primary = next((k for k in ("accuracy", "exact_match", "rouge_l") if k in metrics), None)
+            record["acc_raw_eval"] = metrics.get(primary)
+            record["acc_ema_eval"] = ema_metrics_by_beta[0.5].get(primary)
+            for beta, beta_metrics in ema_metrics_by_beta.items():
+                record[f"ema_b{beta:g}"] = beta_metrics
+            logger.log(f"  Round {round_num} | {primary}: raw={record['acc_raw_eval']:.4f} "
+                       + " ".join(f"ema(b={b:g})={m.get(primary):.4f}"
+                                  for b, m in ema_metrics_by_beta.items()))
         round_results.append(record)
 
         # Update round-level bar with key metrics

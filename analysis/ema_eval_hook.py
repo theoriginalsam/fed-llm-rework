@@ -50,7 +50,7 @@ class EMAEvalHook:
     def update(self, global_state: dict) -> dict:
         """Feed the round-t raw global state; returns the bias-corrected EMA state.
 
-        Accepts {layer: tensor} (deltaw) or {layer: (B, A)} (ba/homo).
+        Accepts {layer: tensor} (deltaw), {layer: (B, A)} or {layer: {"A", "B"}} (ba/homo).
         Does not modify global_state; the caller must keep distributing the RAW
         state to clients — the EMA output is for evaluation only.
         """
@@ -64,11 +64,18 @@ class EMAEvalHook:
         c = 1.0 - b ** self.t
         return self._map(self._ema, lambda x: x / c)
 
-    # -- helpers handling both tensor and (B, A) tuple values -----------------
+    # -- helpers handling tensor, (B, A) tuple and {"A", "B"} dict values -----
     @staticmethod
     def _map(state, fn):
-        return {k: fn(v) if torch.is_tensor(v) else tuple(fn(x) for x in v)
-                for k, v in state.items()}
+        out = {}
+        for k, v in state.items():
+            if torch.is_tensor(v):
+                out[k] = fn(v)
+            elif isinstance(v, dict):
+                out[k] = {name: fn(x) for name, x in v.items()}
+            else:
+                out[k] = tuple(fn(x) for x in v)
+        return out
 
     @staticmethod
     def _zip(s1, s2, fn):
@@ -77,6 +84,8 @@ class EMAEvalHook:
             v1, v2 = s1[k], s2[k]
             if torch.is_tensor(v1):
                 out[k] = fn(v1, v2)
+            elif isinstance(v1, dict):
+                out[k] = {name: fn(v1[name], v2[name]) for name in v1}
             else:
                 out[k] = tuple(fn(a, b) for a, b in zip(v1, v2))
         return out

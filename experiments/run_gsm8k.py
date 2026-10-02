@@ -57,6 +57,10 @@ def main():
                              "base_config)")
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Override batch size (default: from base_config)")
+    parser.add_argument("--ema-eval", action="store_true",
+                        help="Also evaluate an EMA-smoothed model each round (homo_r8, hetero_pad, flexlora, hetlora)")
+    parser.add_argument("--ema-betas", type=float, nargs="+", default=None,
+                        help="Extra EMA betas to evaluate alongside 0.5 (with --ema-eval)")
     args = parser.parse_args()
 
     results_dir = os.path.join(args.results_dir, "gsm8k")
@@ -91,6 +95,8 @@ def main():
             spa_tau=args.spa_tau,
             batch_size=args.batch_size if args.batch_size is not None else BATCH_SIZE,
             hetlora_m_beta=args.hetlora_m_beta,
+            ema_eval=args.ema_eval,
+            ema_betas=args.ema_betas,
             save_adapters_dir=args.save_adapters_dir,
             **({"clients_per_round": args.clients_per_round}
                if args.clients_per_round is not None else {}),
