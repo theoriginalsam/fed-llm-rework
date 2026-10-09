@@ -101,7 +101,14 @@ def run_federated(
     rank_distribution: Optional[Dict[str, int]] = None,
     ema_eval: bool = False,
     save_adapters_dir: Optional[str] = None,
+    sealed_noise: Optional[Any] = None,
 ) -> Dict[str, Any]:
+    """Run one federated training job.
+
+    sealed_noise: optional src.privacy.SealedRelease. When set, every client's
+    full update is clipped jointly and noised before aggregation (methods that
+    send full ΔW only).
+    """
 
     random.seed(seed)
     np.random.seed(seed)
@@ -225,6 +232,14 @@ def run_federated(
             )
             round_losses.append(loss)
 
+            if sealed_noise is not None:
+                if extract_method != "full_w":
+                    raise ValueError(f"sealed noise needs a full-ΔW method, not {method}")
+                weights = sealed_noise.release(cid, round_num, weights)
+                rec = sealed_noise.log[-1]
+                logger.log(f"  Client {cid}: sealed release norm={rec['norm']:.4f} "
+                           f"clipped={rec['clipped']} eps_client={rec['eps_client']:.3g}")
+
             if method == "hetero_pad":
                 aggregator.update(weights, weight, {}, {})
             elif method in ("hetlora", "hetlora_m"):
@@ -301,6 +316,13 @@ def run_federated(
         round_time = time.time() - round_start
         record = {"round": round_num, "avg_loss": float(np.mean(round_losses)),
                   "round_time_s": round_time, **metrics}
+        if sealed_noise is not None:
+            this = [r for r in sealed_noise.log if r["round"] == round_num]
+            record["sealed"] = {"sigma": sealed_noise.sigma, "clip": sealed_noise.clip,
+                                "eps_per_release": sealed_noise.eps_per_release,
+                                "frac_clipped": float(np.mean([r["clipped"] for r in this])),
+                                "median_norm": float(np.median([r["norm"] for r in this])),
+                                "max_eps_client": max(sealed_noise.epsilon(c) for c in sealed_noise.releases)}
         if ema_hook is not None:
             record["acc_raw_eval"] = metrics.get("accuracy")
             record["acc_ema_eval"] = ema_metrics.get("accuracy")
