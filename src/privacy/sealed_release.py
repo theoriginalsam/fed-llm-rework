@@ -23,7 +23,8 @@ from scipy.stats import norm
 
 
 def _delta(eps, mu):
-    return norm.cdf(mu / 2 - eps / mu) - math.exp(eps) * norm.cdf(-mu / 2 - eps / mu)
+    # second term in log space: e^eps overflows for large eps, its product with the tail does not
+    return norm.cdf(mu / 2 - eps / mu) - math.exp(min(700.0, eps + norm.logcdf(-mu / 2 - eps / mu)))
 
 
 def eps_of_mu(mu: float, delta: float = 1e-5) -> float:
