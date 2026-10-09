@@ -113,7 +113,7 @@ class SealedRelease:
 
 
 def shrink_aggregate(wagg: Dict[str, torch.Tensor], sigma_agg: float, max_rank: int = 64,
-                     device: str = "cpu") -> Dict[str, torch.Tensor]:
+                     device: str = "cpu", stats: Optional[dict] = None) -> Dict[str, torch.Tensor]:
     """Server-side denoising of a noisy aggregate (post-processing: no privacy cost).
 
     Each module of the aggregate is signal + i.i.d. Gaussian noise with known
@@ -139,4 +139,10 @@ def shrink_aggregate(wagg: Dict[str, torch.Tensor], sigma_agg: float, max_rank: 
         eta[keep] = torch.sqrt(torch.clamp((yk ** 2 - beta - 1) ** 2 - 4 * beta, min=0.0)) / yk
         s_hat = eta * scale
         out[k] = ((U * s_hat) @ V.T).to(W.dtype).cpu()
+        if stats is not None:
+            stats["kept"] = stats.get("kept", 0) + int(keep.sum())
+            stats["modules"] = stats.get("modules", 0) + 1
+            stats["modules_with_signal"] = stats.get("modules_with_signal", 0) + int(keep.any())
+            stats["in_norm2"] = stats.get("in_norm2", 0.0) + float(X.pow(2).sum())
+            stats["out_norm2"] = stats.get("out_norm2", 0.0) + float(s_hat.pow(2).sum())
     return out

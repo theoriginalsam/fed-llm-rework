@@ -27,7 +27,8 @@ from src.privacy import SealedRelease
 from src.server.fl_server import run_federated
 
 # a trailing "d" = the server denoises the noisy aggregate (post-processing, no privacy cost)
-DEFAULT_CONDITIONS = ["none", "clip", "1e4", "1e4d", "1e3", "1e3d", "100d", "10d", "1d", "1e5", "1e5d"]
+# "base": one round whose aggregate the denoiser zeroes entirely (eps 1e-6), i.e. the untrained base model
+DEFAULT_CONDITIONS = ["base", "none", "clip", "1e4", "1e4d", "1e3", "1e3d", "100d", "10d", "1d", "1e5", "1e5d"]
 
 
 def load_data(dataset, tokenizer, seed, alpha):
@@ -71,9 +72,12 @@ def main():
             print(f"Skipping {cond}: done")
             continue
         sealed = None
-        denoise = cond.endswith("d")
-        level = cond[:-1] if denoise else cond
-        if cond == "clip":
+        denoise = cond.endswith("d") or cond == "base"
+        level = cond[:-1] if cond.endswith("d") else cond
+        rounds = 1 if cond == "base" else args.num_rounds
+        if cond == "base":
+            sealed = SealedRelease(clip=args.clip, eps_per_release=1e-6, impl="torch")
+        elif cond == "clip":
             sealed = SealedRelease(clip=args.clip, eps_per_release=None, impl="torch")
         elif cond != "none":
             sealed = SealedRelease(clip=args.clip, eps_per_release=float(level), impl=args.impl)
@@ -84,7 +88,7 @@ def main():
             method="flexlora", base_model=model, tokenizer=tokenizer,
             client_datasets=clients, test_dataset=test, dataset_config=cfg,
             seed=args.seed, alpha=args.alpha, results_dir=out_dir, device=args.device,
-            num_rounds=args.num_rounds, batch_size=BATCH_SIZE, sealed_noise=sealed,
+            num_rounds=rounds, batch_size=BATCH_SIZE, sealed_noise=sealed,
             sealed_denoise=denoise,
         )
         json.dump({"condition": cond, "denoise": denoise, "clip": args.clip, "impl": args.impl,

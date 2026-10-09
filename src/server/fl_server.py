@@ -182,6 +182,7 @@ def run_federated(
 
         round_losses = []
         round_weights = []
+        denoise_stats = None
 
         for client_idx, cid in enumerate(selected):
             rank = client_rank_map[cid]
@@ -278,8 +279,12 @@ def run_federated(
                 from src.privacy import shrink_aggregate
                 # aggregate = sum_i w_i (clip(x_i) + N_i): per-entry noise std sigma * ||w||_2
                 sigma_agg = sealed_noise.sigma * float(np.sqrt(np.sum(np.square(round_weights))))
-                global_wagg = shrink_aggregate(global_wagg, sigma_agg, device=device)
-                logger.log(f"  Denoised aggregate at sigma_agg={sigma_agg:.4g}")
+                dn = {}
+                global_wagg = shrink_aggregate(global_wagg, sigma_agg, device=device, stats=dn)
+                denoise_stats = {"sigma_agg": sigma_agg, **dn}
+                logger.log(f"  Denoised aggregate at sigma_agg={sigma_agg:.4g}: kept {dn['kept']} components "
+                           f"in {dn['modules_with_signal']}/{dn['modules']} modules, "
+                           f"output norm {dn['out_norm2'] ** 0.5:.4g} (input {dn['in_norm2'] ** 0.5:.4g})")
 
         # Eval rank strategy: median = typical deployment device
         all_ranks = sorted(client_rank_map.values())
@@ -333,7 +338,8 @@ def run_federated(
                                 "eps_per_release": sealed_noise.eps_per_release,
                                 "frac_clipped": float(np.mean([r["clipped"] for r in this])),
                                 "median_norm": float(np.median([r["norm"] for r in this])),
-                                "max_eps_client": max(sealed_noise.epsilon(c) for c in sealed_noise.releases)}
+                                "max_eps_client": max(sealed_noise.epsilon(c) for c in sealed_noise.releases),
+                                "denoise": denoise_stats}
         if ema_hook is not None:
             record["acc_raw_eval"] = metrics.get("accuracy")
             record["acc_ema_eval"] = ema_metrics.get("accuracy")
