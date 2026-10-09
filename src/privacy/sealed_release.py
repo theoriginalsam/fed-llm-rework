@@ -110,3 +110,33 @@ class SealedRelease:
         ct = st["boxes"][cid].release(st["server"].nonce(cid, rnd), {k: weights[k].float().numpy() for k in keys})
         out = st["server"].receive(cid, ct)
         return {k: torch.from_numpy(out[k].copy()) for k in keys}
+
+
+def shrink_aggregate(wagg: Dict[str, torch.Tensor], sigma_agg: float, max_rank: int = 64,
+                     device: str = "cpu") -> Dict[str, torch.Tensor]:
+    """Server-side denoising of a noisy aggregate (post-processing: no privacy cost).
+
+    Each module of the aggregate is signal + i.i.d. Gaussian noise with known
+    per-entry std sigma_agg. Singular values of pure noise end at the
+    Marchenko-Pastur edge sigma_agg (sqrt(d1) + sqrt(d2)); the Gavish-Donoho
+    Frobenius-optimal shrinker sets everything below the edge to zero and
+    shrinks what is above it to undo the noise inflation.
+    """
+    out = {}
+    for k, W in wagg.items():
+        d1, d2 = W.shape
+        n, m = max(d1, d2), min(d1, d2)
+        beta = m / n
+        scale = sigma_agg * math.sqrt(n)
+        X = W.to(device=device, dtype=torch.float32)
+        q = min(max_rank, m)
+        U, S, V = torch.svd_lowrank(X, q=q, niter=4)
+        y = S / scale
+        edge = 1 + math.sqrt(beta)
+        keep = y > edge
+        eta = torch.zeros_like(y)
+        yk = y[keep]
+        eta[keep] = torch.sqrt(torch.clamp((yk ** 2 - beta - 1) ** 2 - 4 * beta, min=0.0)) / yk
+        s_hat = eta * scale
+        out[k] = ((U * s_hat) @ V.T).to(W.dtype).cpu()
+    return out

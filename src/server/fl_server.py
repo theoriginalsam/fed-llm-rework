@@ -102,12 +102,15 @@ def run_federated(
     ema_eval: bool = False,
     save_adapters_dir: Optional[str] = None,
     sealed_noise: Optional[Any] = None,
+    sealed_denoise: bool = False,
 ) -> Dict[str, Any]:
     """Run one federated training job.
 
     sealed_noise: optional src.privacy.SealedRelease. When set, every client's
     full update is clipped jointly and noised before aggregation (methods that
     send full ΔW only).
+    sealed_denoise: if True, the server shrinks the noisy aggregate's singular
+    values with the Gavish-Donoho rule at the known noise level (post-processing).
     """
 
     random.seed(seed)
@@ -178,6 +181,7 @@ def run_federated(
             total_rw = sum(len(client_datasets[cid]) for cid in selected)
 
         round_losses = []
+        round_weights = []
 
         for client_idx, cid in enumerate(selected):
             rank = client_rank_map[cid]
@@ -232,6 +236,7 @@ def run_federated(
             )
             round_losses.append(loss)
 
+            round_weights.append(weight)
             if sealed_noise is not None:
                 if extract_method != "full_w":
                     raise ValueError(f"sealed noise needs a full-ΔW method, not {method}")
@@ -269,6 +274,12 @@ def run_federated(
         else:
             # SPA / FlexLoRA / Homo already accumulate W_agg directly
             global_wagg = {k: v.cpu() for k, v in aggregator.get_global().items()}
+            if sealed_noise is not None and sealed_denoise and sealed_noise.sigma > 0:
+                from src.privacy import shrink_aggregate
+                # aggregate = sum_i w_i (clip(x_i) + N_i): per-entry noise std sigma * ||w||_2
+                sigma_agg = sealed_noise.sigma * float(np.sqrt(np.sum(np.square(round_weights))))
+                global_wagg = shrink_aggregate(global_wagg, sigma_agg, device=device)
+                logger.log(f"  Denoised aggregate at sigma_agg={sigma_agg:.4g}")
 
         # Eval rank strategy: median = typical deployment device
         all_ranks = sorted(client_rank_map.values())

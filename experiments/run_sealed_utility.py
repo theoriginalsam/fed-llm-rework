@@ -26,7 +26,8 @@ from config.base_config import NUM_CLIENTS, NUM_ROUNDS, BATCH_SIZE
 from src.privacy import SealedRelease
 from src.server.fl_server import run_federated
 
-DEFAULT_CONDITIONS = ["none", "clip", "1e5", "1e4", "1e3", "100", "10", "1"]
+# a trailing "d" = the server denoises the noisy aggregate (post-processing, no privacy cost)
+DEFAULT_CONDITIONS = ["none", "clip", "1e4", "1e4d", "1e3", "1e3d", "100d", "10d", "1d", "1e5", "1e5d"]
 
 
 def load_data(dataset, tokenizer, seed, alpha):
@@ -70,10 +71,12 @@ def main():
             print(f"Skipping {cond}: done")
             continue
         sealed = None
+        denoise = cond.endswith("d")
+        level = cond[:-1] if denoise else cond
         if cond == "clip":
             sealed = SealedRelease(clip=args.clip, eps_per_release=None, impl="torch")
         elif cond != "none":
-            sealed = SealedRelease(clip=args.clip, eps_per_release=float(cond), impl=args.impl)
+            sealed = SealedRelease(clip=args.clip, eps_per_release=float(level), impl=args.impl)
         print(f"\n=== {args.dataset} | {cond} | seed {args.seed} | sigma="
               f"{getattr(sealed, 'sigma', 0.0):.4g}")
         clients, test, cfg = load_data(args.dataset, tokenizer, args.seed, args.alpha)
@@ -82,8 +85,9 @@ def main():
             client_datasets=clients, test_dataset=test, dataset_config=cfg,
             seed=args.seed, alpha=args.alpha, results_dir=out_dir, device=args.device,
             num_rounds=args.num_rounds, batch_size=BATCH_SIZE, sealed_noise=sealed,
+            sealed_denoise=denoise,
         )
-        json.dump({"condition": cond, "clip": args.clip, "impl": args.impl,
+        json.dump({"condition": cond, "denoise": denoise, "clip": args.clip, "impl": args.impl,
                    "sigma": getattr(sealed, "sigma", 0.0),
                    "eps_per_release": getattr(sealed, "eps_per_release", None),
                    "eps_client_final": ({str(c): sealed.epsilon(c) for c in sealed.releases}
