@@ -65,6 +65,8 @@ def main():
     parser.add_argument("--clients-per-round", type=int, default=None,
                         help="Override clients selected per round (default: from "
                              "base_config). Raise it for a probe so all ranks are covered.")
+    parser.add_argument("--ema-product", action="store_true",
+                        help="hetlora + --ema-eval: also evaluate EMA of B@A and factor EMA, both SVD-truncated")
     parser.add_argument("--ema-betas", type=float, nargs="+", default=None,
                         help="Extra EMA betas to evaluate alongside 0.5 (with --ema-eval)")
     args = parser.parse_args()
@@ -114,6 +116,7 @@ def main():
             hetlora_m_beta=args.hetlora_m_beta,
             ema_eval=args.ema_eval,
             ema_betas=args.ema_betas,
+            ema_product=args.ema_product,
             save_adapters_dir=args.save_adapters_dir,
             **({"clients_per_round": args.clients_per_round}
                if args.clients_per_round is not None else {}),

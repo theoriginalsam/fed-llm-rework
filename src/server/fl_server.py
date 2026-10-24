@@ -101,6 +101,7 @@ def run_federated(
     rank_distribution: Optional[Dict[str, int]] = None,
     ema_eval: bool = False,
     ema_betas: Optional[List[float]] = None,
+    ema_product: bool = False,
     save_adapters_dir: Optional[str] = None,
 ) -> Dict[str, Any]:
 
@@ -151,6 +152,15 @@ def run_federated(
             raise ValueError(f"--ema-eval is not supported for method {method}")
         for beta in sorted(set(ema_betas or []) | {0.5}):
             ema_hooks[beta] = EMAEvalHook(beta=beta, space=_EMA_SPACE[method])
+
+    # EMA of the adapter product Delta W = B A instead of the factors, for hetlora. Both it and
+    # the factor EMA are reduced to the eval rank by truncated SVD, so the two differ only in
+    # where the average is taken.
+    ema_product_hook: Optional[EMAEvalHook] = None
+    if ema_product:
+        if not (ema_eval and method == "hetlora"):
+            raise ValueError("--ema-product requires --ema-eval and method hetlora")
+        ema_product_hook = EMAEvalHook(beta=0.5, space="deltaw")
 
     # Global state: W_agg per layer {layer_key: tensor(d_out, d_in)}
     # HetLoRA uses global_ba {layer_key: {"A": ..., "B": ...}} at max_rank instead.
@@ -302,9 +312,12 @@ def run_federated(
                 torch.get_rng_state(),
                 torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             )
+            factor_ema_ba = None
             for beta, hook in ema_hooks.items():
                 if method == "hetlora":
                     smoothed_ba = hook.update(global_ba_hetlora)
+                    if beta == 0.5:
+                        factor_ema_ba = smoothed_ba
                     ema_eval_lora = HetLoRAAggregator.distribute_to_client(
                         smoothed_ba, eval_rank, device
                     )
@@ -322,6 +335,20 @@ def run_federated(
                     dataset_config=dataset_config,
                     device=device,
                 )
+            if ema_product_hook is not None:
+                product_ema_w = ema_product_hook.update(global_wagg)
+                factor_ema_w = {k: v["B"] @ v["A"] for k, v in factor_ema_ba.items()}
+                for name, w in (("ema_product_svd", product_ema_w), ("ema_factor_svd", factor_ema_w)):
+                    ema_metrics_by_beta[name] = evaluate_model(
+                        base_model=base_model,
+                        tokenizer=tokenizer,
+                        global_lora_weights=project_wagg_to_client(w, eval_rank, method, spa_tau, device),
+                        rank=eval_rank,
+                        test_dataset=test_dataset,
+                        dataset_config=dataset_config,
+                        device=device,
+                    )
+                del product_ema_w, factor_ema_w
             random.setstate(rng_state[0])
             np.random.set_state(rng_state[1])
             torch.set_rng_state(rng_state[2])
@@ -335,11 +362,15 @@ def run_federated(
             primary = next((k for k in ("accuracy", "exact_match", "rouge_l") if k in metrics), None)
             record["acc_raw_eval"] = metrics.get(primary)
             record["acc_ema_eval"] = ema_metrics_by_beta[0.5].get(primary)
-            for beta, beta_metrics in ema_metrics_by_beta.items():
-                record[f"ema_b{beta:g}"] = beta_metrics
+            for key, key_metrics in ema_metrics_by_beta.items():
+                if isinstance(key, str):
+                    record[key] = key_metrics
+                    record[f"acc_{key}_eval"] = key_metrics.get(primary)
+                else:
+                    record[f"ema_b{key:g}"] = key_metrics
             logger.log(f"  Round {round_num} | {primary}: raw={record['acc_raw_eval']:.4f} "
-                       + " ".join(f"ema(b={b:g})={m.get(primary):.4f}"
-                                  for b, m in ema_metrics_by_beta.items()))
+                       + " ".join(f"{k if isinstance(k, str) else f'ema(b={k:g})'}={m.get(primary):.4f}"
+                                  for k, m in ema_metrics_by_beta.items()))
         round_results.append(record)
 
         # Update round-level bar with key metrics
